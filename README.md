@@ -16,10 +16,13 @@ npm run thumbnail   # out/thumb1.png（1280x720）に書き出す
 1. [VOICEVOX](https://voicevox.hiroshiba.jp/) を入れて起動する
 2. `npm run voice` を実行すると `public/voice/*.wav` と `durations.json` ができる
    - 話者の一覧：`npm run voice -- --list`
-   - 話者を変える：`npm run voice -- --speaker 3`
+   - 話者と速さは `src/data/episode1.ts` の `voice` に書く（クレジットの文字もここ）
+   - ためしに別の声で聞く：`npm run voice -- --speaker 8`
 3. 各シーンの長さは、声の長さに合わせて自動で変わる（声がないときは文字数から見積もる）
 
 ナレーションの文章を変えたら、もう一度 `npm run voice` を実行してください。
+
+`public/voice/`・`public/bgm/`・`public/se/` は git に入れていません。音声は作り直せますし、BGM・効果音は素材サイトの規約で再配布できないことが多いためです。YouTube に出した回の音声や素材は、書き出した MP4 といっしょに git の外（クラウドドライブなど）に保存しておいてください。
 
 ## BGM・効果音
 

@@ -1,7 +1,8 @@
 // VOICEVOX でナレーション音声を作る。
 // 使い方: VOICEVOX アプリを起動してから `npm run voice`
-//   話者を変える: `npm run voice -- --speaker 3`（3 = ずんだもん ノーマル）
+//   話者と速さは src/data/episode1.ts の voice に書く（あとで同じ声で作り直せるように）
 //   話者の一覧:   `npm run voice -- --list`
+//   ためしに別の声で聞く: `npm run voice -- --speaker 8`（episode1.ts は変わらない）
 import { mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
@@ -9,8 +10,8 @@ const { episode1 } = await import("../src/data/episode1.ts");
 
 const { values } = parseArgs({
   options: {
-    speaker: { type: "string", default: "3" },
-    speed: { type: "string", default: "0.95" },
+    speaker: { type: "string", default: String(episode1.voice.speaker) },
+    speed: { type: "string", default: String(episode1.voice.speed) },
     host: { type: "string", default: "http://127.0.0.1:50021" },
     list: { type: "boolean", default: false },
   },

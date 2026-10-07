@@ -14,9 +14,19 @@ export type DinoEntry = {
   narration: string;
 };
 
+export type VoiceSettings = {
+  /** VOICEVOX の話者ID（`npm run voice -- --list` で一覧） */
+  speaker: number;
+  /** 話す速さ（1 が普通） */
+  speed: number;
+  /** YouTube の概要欄に書くクレジット */
+  credit: string;
+};
+
 export type Episode = {
   id: string;
   title: string;
+  voice: VoiceSettings;
   opening: { narration: string };
   dinos: DinoEntry[];
   ending: { narration: string };

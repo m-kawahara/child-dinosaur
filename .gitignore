@@ -1,2 +1,8 @@
 node_modules/
 out/
+
+# npm run voice で作り直せる（公開した回の音声は git の外に保存する）
+public/voice/
+# 素材サイトの規約で再配布できないことが多いので入れない
+public/bgm/
+public/se/

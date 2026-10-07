@@ -5,6 +5,7 @@ import type { Episode } from "./types";
 export const episode1: Episode = {
   id: "episode1",
   title: "きょうりゅう だいしゅうごう！",
+  voice: { speaker: 3, speed: 0.95, credit: "VOICEVOX:ずんだもん" },
   opening: {
     narration: "きょうりゅう だいしゅうごう！ きょうは、げんきな きょうりゅうたちが あそびに きたよ。",
   },
