@@ -5,6 +5,8 @@ import { episode1 } from "./data/episode1";
 import { buildTimeline } from "./data/timeline";
 import type { VoiceDurations } from "./data/types";
 import { DinoIntro, type DinoIntroProps } from "./DinoIntro";
+import { Dino3DTest, type Dino3DTestView } from "./scenes/Dino3DTest";
+import type { DinoModelName } from "./three/dinoAsset";
 import { Thumbnail } from "./Thumbnail";
 
 const FPS = 30;
@@ -54,5 +56,14 @@ export const RemotionRoot: React.FC = () => (
       calculateMetadata={calculateMetadata}
     />
     <Still id="Thumbnail" component={Thumbnail} width={1280} height={720} defaultProps={{ episode: episode1 }} />
+    <Composition
+      id="Dino3DTest"
+      component={Dino3DTest}
+      width={1920}
+      height={1080}
+      fps={FPS}
+      durationInFrames={225}
+      defaultProps={{ name: "triceratops" as DinoModelName, view: "demo" as Dino3DTestView }}
+    />
   </>
 );

@@ -31,15 +31,17 @@ const Fern: React.FC<{ x: number; s: number }> = ({ x, s }) => (
   </g>
 );
 
+/** 背景のゆれ。背景の上に重ねるもの（3D の恐竜など）も同じだけ動かす */
+export const backgroundTransform = (frame: number, shake: number) =>
+  `translate(${shake * Math.sin(frame * 2.1) * 14}px, ${shake * Math.cos(frame * 2.7) * 10}px) scale(1.03)`;
+
 /** frameOffset にシーンの開始フレームを渡すと、シーンが変わっても雲が飛ばない */
 export const Background: React.FC<{ shake?: number; frameOffset?: number }> = ({ shake = 0, frameOffset = 0 }) => {
   const frame = useCurrentFrame() + frameOffset;
-  const sx = shake * Math.sin(frame * 2.1) * 14;
-  const sy = shake * Math.cos(frame * 2.7) * 10;
   const drift = (speed: number, offset: number) => ((frame * speed + offset) % 2400) - 240;
   const smoke = (frame * 0.6) % 120;
   return (
-    <AbsoluteFill style={{ transform: `translate(${sx}px, ${sy}px) scale(1.03)` }}>
+    <AbsoluteFill style={{ transform: backgroundTransform(frame, shake) }}>
       <svg viewBox="0 0 1920 1080" width="100%" height="100%">
         <defs>
           <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">

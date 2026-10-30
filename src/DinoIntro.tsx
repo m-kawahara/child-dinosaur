@@ -5,6 +5,7 @@ import type { AudioAvailability, Episode, SceneTiming } from "./data/types";
 import { DinoScene } from "./scenes/DinoScene";
 import { Ending } from "./scenes/Ending";
 import { Opening } from "./scenes/Opening";
+import { Dino3DScene, has3D } from "./scenes/Dino3DScene";
 
 export type DinoIntroProps = {
   episode: Episode;
@@ -39,6 +40,8 @@ export const DinoIntro: React.FC<DinoIntroProps> = ({ episode, scenes, audio }) 
               <Opening episode={episode} timing={timing} audio={audio} />
             ) : timing.key === "ending" ? (
               <Ending episode={episode} timing={timing} />
+            ) : dino && has3D(dino.kind) ? (
+              <Dino3DScene dino={dino} timing={timing} audio={audio} />
             ) : dino ? (
               <DinoScene dino={dino} timing={timing} audio={audio} />
             ) : null}

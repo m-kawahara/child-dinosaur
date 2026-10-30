@@ -11,6 +11,30 @@ npm run render      # out/episode1.mp4 に書き出す
 npm run thumbnail   # out/thumb1.png（1280x720）に書き出す
 ```
 
+## 3D の恐竜
+
+本編の恐竜のシーン（5ひきとも）は 3D で描きます（`src/scenes/Dino3DScene.tsx`）。オープニング・エンディング・サムネイルの恐竜は SVG のままです。
+
+最初に一度 `npm run dinos` を実行してください。`public/models/` に恐竜ごとの `.bin` と `.json` ができます（1ぴき10秒ほど）。1ぴきだけ作り直すときは `npm run dinos -- triceratops` のように名前をつけます。作り直せるので git には入れていません。
+
+| 恐竜 | 動き |
+| --- | --- |
+| ティラノサウルス | 2本足で歩く、ほえる（あごが開く） |
+| トリケラトプス | 4本足で歩く、頭突き |
+| ブラキオサウルス | 4本足で歩く、首をのばしてもぐもぐ |
+| ステゴサウルス | 4本足で歩く、とげのしっぽを振る |
+| プテラノドン | はばたいて飛ぶ、ぐるっと回る |
+
+| どこを変える | ファイル |
+| --- | --- |
+| 形・色・骨（恐竜ごと） | `scripts/dino3d/<名前>.mjs` |
+| 動き（歩く・止まる・アクション） | `src/three/<名前>Rig.ts`（4本足の共通部分は `quadrupedRig.ts`、IK は `rigBase.ts`） |
+| うろこの質感 | `src/three/dinoMaterial.ts` |
+| 歩く速さ・止まる位置・カメラ・飛ぶ高さ | `src/scenes/Dino3DScene.tsx` の `STAGES` |
+| 登場・退場の長さ | `src/data/timeline.ts` の `STAGE_FRAMES_3D` |
+
+Studio の `Dino3DTest` で1ぴきずつ見られます（`name` と `view` を切りかえる）。本物らしい歩幅で歩くので、3D の恐竜のシーンは登場と退場に時間をかけています。
+
 ## ナレーション（VOICEVOX）
 
 1. [VOICEVOX](https://voicevox.hiroshiba.jp/) を入れて起動する

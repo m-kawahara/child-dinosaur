@@ -1,8 +1,18 @@
-import type { Episode, SceneTiming, VoiceDurations } from "./types";
+import type { DinoEntry, DinoKind, Episode, SceneTiming, VoiceDurations } from "./types";
 
 export const ENTER_FRAMES = 75;
 export const EXIT_FRAMES = 60;
 export const ACTION_DELAY = 10;
+
+// 3D の恐竜は本物らしい歩幅で歩くので、出入りに時間をかける（速くすると足がすべる）
+const STAGE_FRAMES_3D: Partial<Record<DinoKind, { enter: number; exit: number }>> = {
+  trex: { enter: 135, exit: 155 },
+  triceratops: { enter: 145, exit: 145 },
+  stegosaurus: { enter: 145, exit: 150 },
+  brachiosaurus: { enter: 165, exit: 185 },
+};
+
+export const stageFrames = (dino: Pick<DinoEntry, "kind">) => STAGE_FRAMES_3D[dino.kind] ?? { enter: ENTER_FRAMES, exit: EXIT_FRAMES };
 const HOLD_AFTER_VOICE = 25;
 
 // 音声がまだ無いときは文字数から長さを見積もる（子ども向けのゆっくりめ）
@@ -30,7 +40,8 @@ export const buildTimeline = (episode: Episode, durations: VoiceDurations, fps: 
   for (const dino of episode.dinos) {
     const v = voice(dino.id, dino.narration);
     const stand = Math.max(v.voiceFrames, 4 * fps) + HOLD_AFTER_VOICE;
-    push(dino.id, ENTER_FRAMES, v, ENTER_FRAMES + stand + EXIT_FRAMES);
+    const { enter, exit } = stageFrames(dino);
+    push(dino.id, enter, v, enter + stand + exit);
   }
 
   const ed = voice("ending", episode.ending.narration);

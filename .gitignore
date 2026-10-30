@@ -6,3 +6,5 @@ public/voice/
 # 素材サイトの規約で再配布できないことが多いので入れない
 public/bgm/
 public/se/
+# 3D モデルは npm run dinos で作り直せる
+public/models/
