@@ -7,7 +7,7 @@ import { Dino } from "../components/Dino";
 import { fontFamily } from "../components/font";
 import type { AudioAvailability, Episode, SceneTiming } from "../data/types";
 
-const TITLE_COLORS = ["#ff7b54", "#ffb938", "#5cc46b", "#4aa8e8", "#b58ad6", "#f08fb0"];
+export const TITLE_COLORS = ["#ff7b54", "#ffb938", "#5cc46b", "#4aa8e8", "#b58ad6", "#f08fb0"];
 
 export const Title: React.FC<{ text: string; delay?: number; size?: number }> = ({ text, delay = 0, size = 130 }) => {
   const frame = useCurrentFrame();
