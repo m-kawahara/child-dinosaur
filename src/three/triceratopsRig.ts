@@ -10,7 +10,7 @@ export const TRICERATOPS_STRIDE_WORLD = GAIT.stride / GAIT.stance;
 /** トリケラトプス：4本足で歩く、頭突き */
 export class TriceratopsRig extends QuadrupedRig {
   constructor(asset: DinoAsset) {
-    super(asset, { gait: GAIT, necks: ["neck"], tails: 4, bob: 0.035, nod: 0.03 });
+    super(asset, { gait: GAIT, necks: ["neck"], tails: 4, bob: 0.035, nod: 0.03, jawOpen: 0.4 });
     this.update({});
   }
 

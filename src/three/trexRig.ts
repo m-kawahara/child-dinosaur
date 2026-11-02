@@ -53,7 +53,8 @@ export class TRexRig extends DinoRig {
     this.bone("neck1").rotation.set(0, 0.01 * sway, -pitch + nod + raise * 0.14);
     this.bone("neck2").rotation.set(0, 0.01 * sway, -nod * 0.5 + raise * 0.12);
     this.bone("head").rotation.set(0, 0, raise * 0.1);
-    this.bone("jaw").rotation.set(0, 0, -0.55 * (pose.jaw ?? 0));
+    this.openJaw(pose.jaw ?? 0, 0.55);
+    this.blink(pose.blink ?? 0);
 
     // 足：足先の位置を決めてから、ひざを逆算する
     const gait = { ...GAIT, stride: GAIT.stride * k, lift: GAIT.lift * k };

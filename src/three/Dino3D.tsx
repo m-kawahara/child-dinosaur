@@ -39,7 +39,8 @@ const CameraRig: React.FC<CameraSpec> = ({ position, lookAt, fov }) => {
 const Lighting: React.FC = () => {
   const { gl, scene } = useThree();
   useMemo(() => {
-    gl.toneMapping = THREE.ACESFilmicToneMapping;
+    // 明るい体の色がくすまないトーンマップ
+    gl.toneMapping = THREE.NeutralToneMapping;
     gl.toneMappingExposure = 1.0;
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -60,7 +61,8 @@ const Lighting: React.FC = () => {
   }, []);
   return (
     <>
-      <hemisphereLight args={["#d8ecff", "#8a7a5a", 0.6]} />
+      {/* 下からの照り返しは砂地の明るい色に（おなかや翼の裏がくすまないように） */}
+      <hemisphereLight args={["#d8ecff", "#f3e6d2", 1.0]} />
       <primitive object={key} />
       <directionalLight position={[-4, 5, -7]} intensity={1.4} color="#cfe2ff" />
       {/* 影を受ける地面は手前だけ。奥まであると、2D の丘の上に影が落ちてしまう */}
@@ -72,37 +74,53 @@ const Lighting: React.FC = () => {
   );
 };
 
-const DinoMesh: React.FC<{ name: DinoModelName; asset: DinoAsset; pose: DinoPose3D; x: number; y: number; scale: number }> = ({
-  name,
-  asset,
-  pose,
-  x,
-  y,
-  scale,
-}) => {
-  const rig = useMemo(() => new RIGS[name](asset), [name, asset]);
-  rig.update(pose);
-  return <primitive object={rig.group} position={[x, y, 0]} scale={scale} />;
+/** 1ぴき分の置き方。y は空を飛ぶときの高さ、z は奥行き（マイナスが奥）、turn はこちらへ向ける角度 */
+export type Dino3DItem = { name: DinoModelName; pose: DinoPose3D; x: number; y?: number; z?: number; scale?: number; turn?: number };
+
+const DinoMesh: React.FC<{ item: Dino3DItem; asset: DinoAsset }> = ({ item, asset }) => {
+  const rig = useMemo(() => new RIGS[item.name](asset), [item.name, asset]);
+  rig.update(item.pose);
+  return <primitive object={rig.group} position={[item.x, item.y ?? 0, item.z ?? 0]} rotation={[0, item.turn ?? 0, 0]} scale={item.scale ?? 1} />;
 };
 
 /**
- * モデルを読み終えるまで待つ。書き出し中の ThreeCanvas はフレームが変わったときしか描かないので、
+ * モデルを全部読み終えるまで待つ。書き出し中の ThreeCanvas はフレームが変わったときしか描かないので、
  * 読み終えてからキャンバスを作る（作ったときに1回描く）。
  */
-const useDinoAsset = (name: DinoModelName) => {
-  const [asset, setAsset] = useState<DinoAsset | null>(null);
-  const [handle] = useState(() => delayRender(`3D の恐竜（${name}）を読み込み中`));
+const useDinoAssets = (names: DinoModelName[]) => {
+  const key = [...new Set(names)].sort().join(",");
+  const [assets, setAssets] = useState<Map<DinoModelName, DinoAsset> | null>(null);
+  const [handle] = useState(() => delayRender(`3D の恐竜（${key}）を読み込み中`));
   useEffect(() => {
-    loadDinoAsset(name).then(setAsset, (e) => cancelRender(e));
-  }, [name]);
+    const list = key.split(",") as DinoModelName[];
+    Promise.all(list.map(loadDinoAsset)).then(
+      (loaded) => setAssets(new Map(list.map((n, i) => [n, loaded[i]]))),
+      (e) => cancelRender(e),
+    );
+  }, [key]);
   // キャンバスが自分の delayRender を登録してから手放す
   useLayoutEffect(() => {
-    if (asset) continueRender(handle);
-  }, [asset, handle]);
-  return asset;
+    if (assets) continueRender(handle);
+  }, [assets, handle]);
+  return assets;
 };
 
-/** 背景の上に重ねる、背景が透明な 3D の恐竜。y は空を飛ぶときの高さ */
+/** 背景の上に重ねる、背景が透明な 3D の恐竜たち（1つのキャンバスにまとめて描く） */
+export const Dinos3D: React.FC<{ items: Dino3DItem[]; width: number; height: number; camera: CameraSpec }> = ({ items, width, height, camera }) => {
+  const assets = useDinoAssets(items.map((d) => d.name));
+  if (!assets) return null;
+  return (
+    <ThreeCanvas width={width} height={height} shadows gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true }}>
+      <CameraRig {...camera} />
+      <Lighting />
+      {items.map((item, i) => (
+        <DinoMesh key={i} item={item} asset={assets.get(item.name)!} />
+      ))}
+    </ThreeCanvas>
+  );
+};
+
+/** 1ぴきだけのとき */
 export const Dino3D: React.FC<{
   name: DinoModelName;
   width: number;
@@ -112,14 +130,6 @@ export const Dino3D: React.FC<{
   y?: number;
   scale?: number;
   camera: CameraSpec;
-}> = ({ name, width, height, pose, x, y = 0, scale = 1, camera }) => {
-  const asset = useDinoAsset(name);
-  if (!asset) return null;
-  return (
-    <ThreeCanvas width={width} height={height} shadows gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true }}>
-      <CameraRig {...camera} />
-      <Lighting />
-      <DinoMesh name={name} asset={asset} pose={pose} x={x} y={y} scale={scale} />
-    </ThreeCanvas>
-  );
-};
+}> = ({ name, width, height, pose, x, y, scale, camera }) => (
+  <Dinos3D items={[{ name, pose, x, y, scale }]} width={width} height={height} camera={camera} />
+);

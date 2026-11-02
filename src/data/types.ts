@@ -27,9 +27,11 @@ export type Episode = {
   id: string;
   title: string;
   voice: VoiceSettings;
-  opening: { narration: string };
+  /** subtitle はタイトルの下に小さく出すひとこと */
+  opening: { narration: string; subtitle?: string };
   dinos: DinoEntry[];
-  ending: { narration: string };
+  /** title は大きく出す文字、subtitle はその下のひとこと */
+  ending: { narration: string; title?: string; subtitle?: string };
 };
 
 /** voice/durations.json のキー（"opening" / 恐竜の id / "ending"） */
@@ -45,7 +47,13 @@ export type SceneTiming = {
   hasVoice: boolean;
 };
 
+/** なき声（cries/cries.json）。seconds は声の長さ、mouth は口の開き（0〜1）の折れ線 [[秒, 開き], ...] */
+export type CryInfo = { seconds: number; mouth: [number, number][] };
+export type Cries = Partial<Record<DinoKind, CryInfo>>;
+
 export type AudioAvailability = {
   bgm: boolean;
   se: Record<string, boolean>;
+  /** npm run cries で作ったなき声（作っていなければ空） */
+  cries: Cries;
 };

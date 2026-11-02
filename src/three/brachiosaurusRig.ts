@@ -12,7 +12,7 @@ const NECKS = ["neck1", "neck2", "neck3", "neck4"];
 /** ブラキオサウルス：4本足でゆっくり歩く、首をのばして高い葉を食べる */
 export class BrachiosaurusRig extends QuadrupedRig {
   constructor(asset: DinoAsset) {
-    super(asset, { gait: GAIT, necks: NECKS, tails: 5, bob: 0.03, nod: 0.02 });
+    super(asset, { gait: GAIT, necks: NECKS, tails: 5, bob: 0.03, nod: 0.02, jawOpen: 0.36 });
     this.update({});
   }
 
@@ -26,6 +26,6 @@ export class BrachiosaurusRig extends QuadrupedRig {
       this.bone(n).rotation.z += 0.07 * reach * (1 - i * 0.15) + drift;
     });
     this.bone("head").rotation.z += -0.2 * reach + 0.06 * munch;
-    this.bone("jaw").rotation.set(0, 0, -0.18 * munch);
+    this.openJaw(Math.max(pose.jaw ?? 0, 0.5 * munch), 0.36);
   }
 }

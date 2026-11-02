@@ -1,4 +1,5 @@
 import { interpolate } from "remotion";
+import { ACTION_FRAMES } from "../data/timeline";
 import type { DinoAction } from "../data/types";
 import type { DinoPose } from "../dinos/types";
 import { flapPose } from "./walk";
@@ -10,14 +11,6 @@ export type ActionResult = {
   dy: number;
   /** 画面のゆれ 0〜1 */
   shake: number;
-};
-
-export const ACTION_FRAMES: Record<DinoAction, number> = {
-  roar: 60,
-  headbutt: 70,
-  longneck: 120,
-  tailswing: 80,
-  fly: 110,
 };
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;

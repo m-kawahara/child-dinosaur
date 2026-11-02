@@ -120,16 +120,21 @@ export function polygonize(sdf, { min, max, h }, log) {
     pos.set([x, y, z], v * 3);
     nrm.set([g[0] / l, g[1] / l, g[2] / l], v * 3);
   }
-  // 三角形の向きと法線が逆なら全部ひっくり返す
-  let agree = 0;
-  for (let t = 0; t < tris.length; t += 3 * 50) {
+  // 三角形の向きを、1つずつ法線に合わせる。表面にのせ直したときに折れ返った小さな三角形があると、
+  // そこだけ裏向きになって穴があき、ふちどりの黒が見えてしまう
+  let flipped = 0;
+  for (let t = 0; t < tris.length; t += 3) {
     const [a, b, c] = [tris[t], tris[t + 1], tris[t + 2]];
     const ux = pos[b * 3] - pos[a * 3], uy = pos[b * 3 + 1] - pos[a * 3 + 1], uz = pos[b * 3 + 2] - pos[a * 3 + 2];
     const vx = pos[c * 3] - pos[a * 3], vy = pos[c * 3 + 1] - pos[a * 3 + 1], vz = pos[c * 3 + 2] - pos[a * 3 + 2];
-    agree += Math.sign((uy * vz - uz * vy) * nrm[a * 3] + (uz * vx - ux * vz) * nrm[a * 3 + 1] + (ux * vy - uy * vx) * nrm[a * 3 + 2]);
+    const n = [0, 1, 2].map((i) => nrm[a * 3 + i] + nrm[b * 3 + i] + nrm[c * 3 + i]);
+    if ((uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] < 0) {
+      tris[t + 1] = c;
+      tris[t + 2] = b;
+      flipped++;
+    }
   }
-  if (agree < 0) for (let t = 0; t < tris.length; t += 3) [tris[t + 1], tris[t + 2]] = [tris[t + 2], tris[t + 1]];
-  log("surface refined");
+  log(`surface refined (${flipped} triangles turned)`);
   return { pos, nrm, tris };
 }
 
@@ -167,22 +172,30 @@ export const blendGroups = (groups) => {
 
 // ---------- 書き出し ----------
 /**
- * dino: { name, bones, eyes, teeth, scales, color(p, n), detail(p, n), skin(p) }
- * color は sRGB の [r, g, b]（0〜1）、detail は [小さいうろこの割合, うろこの強さ]（0〜1）
+ * dino: { name, bones, eyes, teeth, color(p, n), gloss(p, n), skin(p) }
+ * color は sRGB の [r, g, b]（0〜1）、gloss はつや（0 = 肌、1 = 角・つめのようにつやつや）。
+ * eyes は { center, axis, radius, lid }（lid はまぶたの色。sRGB）
  */
 export function writeModel(outDir, dino, { pos, nrm, tris }, log) {
   const VN = pos.length / 3;
   const col = new Uint8Array(VN * 4);
-  const detail = new Uint8Array(VN * 2);
+  const gloss = new Uint8Array(VN);
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
   for (let v = 0; v < VN; v++) {
     const p = [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]];
     const n = [nrm[v * 3], nrm[v * 3 + 1], nrm[v * 3 + 2]];
     const c = dino.color(p, n);
     col.set([...c.map((x) => Math.round(clamp(x, 0, 1) * 255)), 255], v * 4);
-    const [small, amount] = dino.detail(p, n);
-    detail.set([Math.round(clamp(small, 0, 1) * 255), Math.round(clamp(amount, 0, 1) * 255)], v * 2);
+    gloss[v] = Math.round(clamp(dino.gloss(p, n), 0, 1) * 255);
+    for (let i = 0; i < 3; i++) {
+      min[i] = Math.min(min[i], p[i]);
+      max[i] = Math.max(max[i], p[i]);
+    }
   }
-  log("colors");
+  const bounds = { min: min.map((x) => Number(x.toFixed(3))), max: max.map((x) => Number(x.toFixed(3))) };
+  // models.ts の MODEL_INFO（back / front / height）に写す値
+  log(`colors  back ${bounds.min[0]}  front ${bounds.max[0]}  height ${bounds.max[1]}`);
 
   const boneIndex = Object.fromEntries(dino.bones.map((b, i) => [b[0], i]));
   const skinIndex = new Uint8Array(VN * 4);
@@ -205,7 +218,7 @@ export function writeModel(outDir, dino, { pos, nrm, tris }, log) {
     ["position", new Uint8Array(pos.buffer)],
     ["normal", new Uint8Array(nrm.buffer)],
     ["color", col],
-    ["detail", detail],
+    ["gloss", gloss],
     ["skinIndex", skinIndex],
     ["skinWeight", skinWeight],
     ["index", new Uint8Array(index.buffer)],
@@ -222,7 +235,7 @@ export function writeModel(outDir, dino, { pos, nrm, tris }, log) {
     vertexCount: VN,
     indexCount: index.length,
     offsets,
-    scales: dino.scales,
+    bounds,
     bones: dino.bones.map(([name, parent, head, tail]) => ({ name, parent: parent ? boneIndex[parent] : -1, head, tail })),
     eyes: dino.eyes,
     teeth: dino.teeth ?? [],

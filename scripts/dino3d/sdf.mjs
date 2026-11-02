@@ -1,4 +1,4 @@
-// 恐竜の形を組み立てる部品（距離関数）と、小さな数学・ノイズ。
+// 恐竜の形を組み立てる部品（距離関数）と、小さな数学、5ひき共通の顔の部品。
 // 距離関数は「表面までの距離（中はマイナス）」を返す。
 
 // ---------- 数学 ----------
@@ -22,26 +22,6 @@ export const norm3 = ([x, y, z]) => {
 // ---------- 色 ----------
 export const hex = (h) => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255];
 export const lerp3 = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
-
-// ---------- ノイズ ----------
-export const hash = (x, y, z) => {
-  let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ Math.imul(z, 0x2c1b3c6d);
-  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-};
-const vnoise = (x, y, z) => {
-  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-  const xf = x - xi, yf = y - yi, zf = z - zi;
-  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
-  const a = mix(hash(xi, yi, zi), hash(xi + 1, yi, zi), u);
-  const b = mix(hash(xi, yi + 1, zi), hash(xi + 1, yi + 1, zi), u);
-  const c = mix(hash(xi, yi, zi + 1), hash(xi + 1, yi, zi + 1), u);
-  const d = mix(hash(xi, yi + 1, zi + 1), hash(xi + 1, yi + 1, zi + 1), u);
-  return mix(mix(a, b, v), mix(c, d, v), w) * 2 - 1;
-};
-export const fbm = (x, y, z) =>
-  vnoise(x, y, z) * 0.55 + vnoise(x * 2.03 + 17.1, y * 2.03, z * 2.03) * 0.3 + vnoise(x * 4.1, y * 4.1 + 9.3, z * 4.1) * 0.15;
 
 // ---------- 形の部品 ----------
 export const sdSphere = (px, py, pz, c, r) => Math.hypot(px - c[0], py - c[1], pz - c[2]) - r;
@@ -99,14 +79,6 @@ export const sdChain = (px, py, pz, points) => {
   return d;
 };
 
-/** 軸 n のまわりの輪（まぶた） */
-export const sdRing = (px, py, pz, c, n, R, r) => {
-  const qx = px - c[0], qy = py - c[1], qz = pz - c[2];
-  const h = qx * n[0] + qy * n[1] + qz * n[2];
-  const rad = Math.hypot(qx - h * n[0], qy - h * n[1], qz - h * n[2]);
-  return Math.hypot(rad - R, h) - r;
-};
-
 export const boxDist = (px, py, pz, b) => {
   const dx = Math.max(b[0] - px, 0, px - b[3]);
   const dy = Math.max(b[1] - py, 0, py - b[4]);
@@ -114,8 +86,97 @@ export const boxDist = (px, py, pz, b) => {
   return Math.hypot(dx, dy, dz);
 };
 
-/** 目のくぼみに目を入れて、まぶたの輪で囲む */
-export const withEye = (d, px, py, az, eye) => {
-  d = smax(d, -sdSphere(px, py, az, eye.center, eye.radius * 1.22), 0.02);
-  return smin(d, sdRing(px, py, az, eye.center, eye.axis, eye.radius * 1.2, eye.radius * 0.34), 0.025);
+/** 目の穴をあける。目（別のメッシュ）は表面から少し出っぱり、穴とのすき間がこい紫のふちに見える */
+export const withEye = (d, px, py, az, eye) => smax(d, -sdSphere(px, py, az, eye.center, eye.radius * 1.1), eye.radius * 0.25);
+
+/**
+ * 高さ (x, y) のところで、右（z が大きいほう）から体の表面をさがして、表面の z を返す。
+ * 部品の箱から遠いと距離関数は大きな値（10）を返すので、1歩は 0.05 までにする
+ */
+export const surfaceZ = (sdf, x, y, from = 2) => {
+  let z = from;
+  for (let i = 0; i < 1000; i++) {
+    const d = sdf(x, y, z);
+    if (d < 0.0005) return z;
+    z -= clamp(d * 0.9, 0.0005, 0.05);
+    if (z < 0) return null;
+  }
+  return null;
+};
+
+/**
+ * かわいい目の置き方。(x, y) の高さの右の表面から、axis にそって半径の inset 倍だけ中に目の中心を置く
+ * （目は表面から少し出っぱる）。左右の目と、まぶたの色 lid をまとめて返す
+ */
+export const placeEyes = (sdf, x, y, axis, radius, lid, inset = 0.4) => {
+  const z = surfaceZ(sdf, x, y);
+  const c = [x - axis[0] * radius * inset, y - axis[1] * radius * inset, z - axis[2] * radius * inset];
+  const right = { center: c, axis, radius };
+  return {
+    eye: right,
+    eyes: [1, -1].map((s) => ({ center: [c[0], c[1], s * c[2]], axis: [axis[0], axis[1], s * axis[2]], radius, lid })),
+  };
+};
+
+/** 目のまわりの度合い（目の穴のふちにおなかの色などをつけないため） */
+export const nearEye = (px, py, az, eye) =>
+  1 - smoothstep(eye.radius * 1.3, eye.radius * 1.6, Math.hypot(px - eye.center[0], py - eye.center[1], az - eye.center[2]));
+
+/** 顔の色（5ひき共通）：ほおのチーク、口の中、舌、つめ・角 */
+export const FACE = { cheek: hex(0xff8fa3), mouth: hex(0xc2475a), tongue: hex(0xff8597), nail: hex(0xfff3d6) };
+
+/** 頭だけを大きくする座標の写し方。頭は「頭の座標」で作り、首のつけ根 pivot を中心に scale 倍して置く */
+export const headSpace = (pivot, scale) => ({
+  scale,
+  /** 体の座標 → 頭の座標 */
+  toHead: (px, py, pz) => [pivot[0] + (px - pivot[0]) / scale, pivot[1] + (py - pivot[1]) / scale, pz / scale],
+  /** 頭の座標 → 体の座標 */
+  fromHead: ([x, y, z = 0]) => [pivot[0] + (x - pivot[0]) * scale, pivot[1] + (y - pivot[1]) * scale, z * scale],
+});
+
+/**
+ * 口。lipY は頭の座標での口の線（口を閉じたときの上あごと下あごの境目）、corner は口の角の x、gap は口のすき間の半分の幅。
+ * 返す関数は体の座標で使う
+ */
+export const makeMouth = ({ toHead, scale }, lipY, corner, gap) => {
+  const halfGap = (hx) => gap * smoothstep(corner - 0.02, corner + 0.15, hx);
+  /** 口の線からの高さ（上あご側がプラス） */
+  const dist = (px, py) => {
+    const [hx, hy] = toHead(px, py, 0);
+    return (hy - lipY(hx)) * scale;
+  };
+  return {
+    dist,
+    /** 口のすき間をあける */
+    carve: (d, px, py) => {
+      const [hx] = toHead(px, py, 0);
+      return hx > corner - 0.03 ? smax(d, -(Math.abs(dist(px, py)) - halfGap(hx) * scale), 0.008) : d;
+    },
+    /**
+     * inside は口の中の度合い（すき間の内側の面ほど 1）。0 か 1 かで分けると口のふちがギザギザになるので、なめらかに。
+     * near は口のまわり（下を向いていても、おなかの色をつけない）
+     */
+    at: (px, py, ny) => {
+      const [hx] = toHead(px, py, 0);
+      if (hx < corner - 0.3) return { inside: 0, near: 0 };
+      const g = halfGap(hx) * scale;
+      const d = dist(px, py);
+      return {
+        inside: smoothstep(g + 0.045, g + 0.012, Math.abs(d)) * smoothstep(0.15, 0.5, Math.abs(ny)) * smoothstep(corner - 0.08, corner + 0.02, hx),
+        near: d > 0 ? smoothstep(0.34, 0.2, d) : smoothstep(0.08, 0.03, -d),
+      };
+    },
+    /** 下あご（jaw の骨）の重み */
+    jawWeight: (px, py) => smoothstep(0.03, -0.03, dist(px, py)) * smoothstep(corner - 0.18, corner + 0.02, toHead(px, py, 0)[0]),
+  };
+};
+
+/** 点の近さで色をまぜる（ほおのチークやまだら）。spots は [x, y, z, 半径]、z は右側の値（左右同じにする） */
+export const spotAmount = (px, py, az, spots) => {
+  let m = 0;
+  for (const [x, y, z, r] of spots) {
+    const d = Math.hypot(px - x, py - y, az - z);
+    if (d < r) m = Math.max(m, 1 - smoothstep(r * 0.6, r, d));
+  }
+  return m;
 };

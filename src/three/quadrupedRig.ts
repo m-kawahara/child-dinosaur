@@ -13,6 +13,8 @@ export type QuadrupedSpec = {
   /** 歩くときの腰の上下と、首のうなずき */
   bob: number;
   nod: number;
+  /** 口を開ききったときのあごの角度（ラジアン） */
+  jawOpen: number;
 };
 
 /** その時点の歩きの状態（恐竜ごとの動きを足すときに使う） */
@@ -65,6 +67,8 @@ export abstract class QuadrupedRig extends DinoRig {
     const nod = spec.nod * k * Math.sin(TAU * 2 * ph + 1.4) + 0.012 * calm * Math.sin(idle * 0.05 + 0.8);
     for (const n of spec.necks) this.bone(n).rotation.set(0, (0.012 * sway) / spec.necks.length, nod / spec.necks.length);
     this.bone("head").rotation.set(0, 0, -nod * 0.4);
+    this.openJaw(pose.jaw ?? 0, spec.jawOpen);
+    this.blink(pose.blink ?? 0);
     for (let i = 1; i <= spec.tails; i++) {
       const v = 0.03 * k * Math.sin(TAU * 2 * ph - i * 0.7);
       const h = 0.06 * k * Math.sin(TAU * ph - i * 0.6) + 0.03 * calm * Math.sin(idle * 0.045 - i * 0.5);

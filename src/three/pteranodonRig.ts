@@ -41,6 +41,8 @@ export class PteranodonRig extends DinoRig {
     // 首と頭はぶれにくく、少しだけゆれる
     this.bone("neck").rotation.set(0, 0, 0.05 * Math.sin(w + 1) + 0.02 * Math.sin(idle * 0.05));
     this.bone("head").rotation.set(0, 0.03 * Math.sin(idle * 0.04), -0.04 * Math.sin(w));
+    this.openJaw(pose.jaw ?? 0, 0.45);
+    this.blink(pose.blink ?? 0);
     for (const tag of ["R", "L"]) {
       this.bone(`thigh.${tag}`).rotation.set(0, 0, 0.08 * Math.sin(w - 0.5));
       this.bone(`shin.${tag}`).rotation.set(0, 0, 0.05 * Math.sin(w - 1));

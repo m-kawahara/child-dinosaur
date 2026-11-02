@@ -8,3 +8,5 @@ public/bgm/
 public/se/
 # 3D モデルは npm run dinos で作り直せる
 public/models/
+# なき声は npm run cries で作り直せる
+public/cries/

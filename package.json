@@ -9,6 +9,7 @@
     "thumbnail": "remotion still Thumbnail out/thumb1.png",
     "voice": "node scripts/generate-voice.mjs",
     "dinos": "node scripts/build-dinos.mjs",
+    "cries": "node scripts/generate-cries.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

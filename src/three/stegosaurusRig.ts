@@ -10,7 +10,7 @@ export const STEGOSAURUS_STRIDE_WORLD = GAIT.stride / GAIT.stance;
 /** ステゴサウルス：4本足で歩く、とげのついたしっぽを振る */
 export class StegosaurusRig extends QuadrupedRig {
   constructor(asset: DinoAsset) {
-    super(asset, { gait: GAIT, necks: ["neck"], tails: 4, bob: 0.03, nod: 0.025 });
+    super(asset, { gait: GAIT, necks: ["neck"], tails: 4, bob: 0.03, nod: 0.025, jawOpen: 0.4 });
     this.update({});
   }
 

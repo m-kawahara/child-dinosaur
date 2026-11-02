@@ -9,11 +9,12 @@ type V3 = [number, number, number];
 export type DinoMeta = {
   vertexCount: number;
   indexCount: number;
-  offsets: Record<"position" | "normal" | "color" | "detail" | "skinIndex" | "skinWeight" | "index", number>;
-  /** うろこの細かさ（1m あたりの数）。大きいうろこと小さいうろこ */
-  scales: { big: number; small: number };
+  offsets: Record<"position" | "normal" | "color" | "gloss" | "skinIndex" | "skinWeight" | "index", number>;
+  /** モデルの大きさ（models.ts の MODEL_INFO を合わせるときに見る） */
+  bounds: { min: V3; max: V3 };
   bones: { name: string; parent: number; head: V3; tail: V3 }[];
-  eyes: { center: V3; axis: V3; radius: number }[];
+  /** lid はまぶたの色（sRGB、0〜1） */
+  eyes: { center: V3; axis: V3; radius: number; lid: V3 }[];
   teeth: { bone: string; base: V3; dir: V3; length: number; radius: number }[];
 };
 
@@ -48,7 +49,7 @@ const load = async (name: DinoModelName): Promise<DinoAsset> => {
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(buf, o.position, n * 3), 3));
   geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(buf, o.normal, n * 3), 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(color, 3));
-  geometry.setAttribute("detail", new THREE.BufferAttribute(new Uint8Array(buf, o.detail, n * 2), 2, true));
+  geometry.setAttribute("gloss", new THREE.BufferAttribute(new Uint8Array(buf, o.gloss, n), 1, true));
   geometry.setAttribute("skinIndex", new THREE.BufferAttribute(new Uint8Array(buf, o.skinIndex, n * 4), 4));
   geometry.setAttribute("skinWeight", new THREE.BufferAttribute(new Uint8Array(buf, o.skinWeight, n * 4), 4, true));
   geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, o.index, meta.indexCount), 1));
