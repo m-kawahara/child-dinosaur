@@ -1,20 +1,22 @@
 import React from "react";
 import { Audio, Easing, interpolate, Sequence, staticFile, useCurrentFrame } from "remotion";
-import { ACTION_FRAMES, actionAt } from "../animation/actions";
+import { actionAt } from "../animation/actions";
 import { blinkAt, flapPose, idlePose, walkPose } from "../animation/walk";
-import { SE_FILES, voiceFile } from "../audio";
+import { ACTION_SE, CRY_VOLUME, cryFile, SE_FILES, voiceFile } from "../audio";
 import { Background, GROUND_Y } from "../components/Background";
 import { Dino } from "../components/Dino";
-import { Telop } from "../components/Telop";
-import { ACTION_DELAY, ENTER_FRAMES, EXIT_FRAMES } from "../data/timeline";
+import { SceneProgress, Telop } from "../components/Telop";
+import { ACTION_DELAY, ACTION_FRAMES, ENTER_FRAMES, EXIT_FRAMES } from "../data/timeline";
 import type { AudioAvailability, DinoEntry, SceneTiming } from "../data/types";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
-export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: AudioAvailability }> = ({
+export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: AudioAvailability; index: number; colors: string[] }> = ({
   dino,
   timing,
   audio,
+  index,
+  colors,
 }) => {
   const frame = useCurrentFrame();
   const { duration } = timing;
@@ -28,6 +30,7 @@ export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: 
   if (second - actionStarts[0] > actionLen + 30) actionStarts.push(second);
   const current = actionStarts.findLast((s) => frame >= s) ?? actionStarts[0];
   const act = actionAt(dino.action, frame - current);
+  const actionSe = ACTION_SE[dino.action];
 
   const x =
     frame < exitStart
@@ -46,7 +49,8 @@ export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: 
         x={x + act.dx}
         y={y + act.dy + (flying ? (base.bob ?? 0) : 0)}
       />
-      <Telop name={dino.name} fact={dino.fact} color={dino.color} from={ENTER_FRAMES - 10} until={exitStart} />
+      <Telop name={dino.name} fact={dino.fact} color={dino.color} accent={dino.accent} number={index + 1} from={ENTER_FRAMES - 10} until={exitStart} />
+      <SceneProgress colors={colors} current={index} from={ENTER_FRAMES - 10} until={exitStart} />
       {timing.hasVoice ? (
         <Sequence from={timing.voiceStart} layout="none">
           <Audio src={staticFile(voiceFile(dino.id))} />
@@ -57,10 +61,17 @@ export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: 
           <Audio src={staticFile(SE_FILES.pop)} volume={0.6} />
         </Sequence>
       ) : null}
-      {audio.se[SE_FILES[dino.action]]
+      {actionSe && audio.se[actionSe]
         ? actionStarts.map((s) => (
             <Sequence key={s} from={s} durationInFrames={actionLen} layout="none">
-              <Audio src={staticFile(SE_FILES[dino.action])} volume={0.7} />
+              <Audio src={staticFile(actionSe)} volume={0.7} />
+            </Sequence>
+          ))
+        : null}
+      {audio.cries[dino.kind]
+        ? actionStarts.map((s) => (
+            <Sequence key={s} from={s} layout="none">
+              <Audio src={staticFile(cryFile(dino.kind))} volume={CRY_VOLUME} />
             </Sequence>
           ))
         : null}

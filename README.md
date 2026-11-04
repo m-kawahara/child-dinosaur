@@ -1,6 +1,6 @@
 # きょうりゅう だいしゅうごう！
 
-子ども向けの恐竜アニメを [Remotion](https://www.remotion.dev/) で作るプロジェクトです。恐竜はすべてコードで描いた SVG です。
+子ども向けの恐竜アニメを [Remotion](https://www.remotion.dev/) で作るプロジェクトです。恐竜はコードで組み立てたかわいい 3D（大きな目、つるっとした肌、ふちどり）、背景や文字はふちどりのあるシール絵本ふうの 2D です。恐竜のなき声もコードで作ります。
 
 ## 使い方
 
@@ -10,6 +10,53 @@ npm run studio      # ブラウザでプレビューしながら調整する
 npm run render      # out/episode1.mp4 に書き出す
 npm run thumbnail   # out/thumb1.png（1280x720）に書き出す
 ```
+
+## 3D の恐竜
+
+恐竜はオープニング・本編・エンディング・サムネイルとも 3D で描きます（本編は `src/scenes/Dino3DScene.tsx`、オープニングとエンディングの並び方は `src/scenes/lineup.ts`）。`src/dinos/` の SVG の恐竜は、3D のない種類のときだけ使います。
+
+最初に一度 `npm run dinos` を実行してください。`public/models/` に恐竜ごとの `.bin` と `.json` ができます（1ぴき10秒ほど）。1ぴきだけ作り直すときは `npm run dinos -- triceratops` のように名前をつけます。作り直せるので git には入れていません。
+
+見た目は、背景の絵本にあわせた「かわいい 3D」です。大きな丸い目でまばたきし、肌はつるっとしていて、体の色はテロップと同じ色（おなかは明るい色）、頭は大きめ、角・つめ・とげの先はまるく、背景と同じこい紫のふちどりがつきます。どの恐竜も口を開けられ、なき声に合わせて口が動きます。
+
+| 恐竜 | 動き |
+| --- | --- |
+| ティラノサウルス | 2本足で歩く、ほえる（あごが開く） |
+| トリケラトプス | 4本足で歩く、頭突き |
+| ブラキオサウルス | 4本足で歩く、首をのばしてもぐもぐ |
+| ステゴサウルス | 4本足で歩く、とげのしっぽを振る |
+| プテラノドン | はばたいて飛ぶ、ぐるっと回る |
+
+| どこを変える | ファイル |
+| --- | --- |
+| 形・色・骨（恐竜ごと）。頭の大きさは `headSpace`、色は `PAL` | `scripts/dino3d/<名前>.mjs` |
+| 5ひき共通の部品（目の置き方・口・チークの色など） | `scripts/dino3d/sdf.mjs` |
+| 動き（歩く・止まる・アクション） | `src/three/<名前>Rig.ts`（4本足の共通部分は `quadrupedRig.ts`、IK は `rigBase.ts`） |
+| 目・まぶた・歯・ふちどりの太さ | `src/three/rigBase.ts` |
+| 肌のつや・ふちどりの描き方 | `src/three/dinoMaterial.ts` |
+| 歩く速さ・止まる位置・カメラ・飛ぶ高さ・ふきだしの位置 | `src/scenes/Dino3DScene.tsx` の `STAGES` |
+| 登場・退場の長さ | `src/data/timeline.ts` の `STAGE_FRAMES_3D` |
+| 並べるときの大きさ（`npm run dinos` のログの back / front / height） | `src/three/models.ts` の `MODEL_INFO` |
+
+Studio の `Dino3DTest` で1ぴきずつ見られます（`name` と `view` を切りかえる。`sheet` にすると、横・斜め・顔のアップ・口を開けたアクションを 2x2 でまとめて見られます）。本物らしい歩幅で歩くので、3D の恐竜のシーンは登場と退場に時間をかけています。
+
+## なき声
+
+`npm run cries` を実行すると、`public/cries/<恐竜>.wav` と `cries.json`（声の長さと口の開き）ができます（数秒）。1ぴきだけ作り直すときは `npm run cries -- trex` のように名前をつけます。音はプログラムで合成しているので、素材サイトの規約を気にせず YouTube に出せます。作り直せるので git には入れていません。
+
+| 恐竜 | なき声 |
+| --- | --- |
+| ティラノサウルス | ガオーッ（うなりながら、だんだん低く） |
+| トリケラトプス | フンッ（鼻息）＋ブモォー |
+| ブラキオサウルス | ボオォーン（低くやさしい） |
+| ステゴサウルス | フゴッ フゴッ |
+| プテラノドン | クワッ クワーッ |
+
+- 声の高さ・長さ・響きは `scripts/cries/recipes.mjs`、音を作る部品は `scripts/cries/synth.mjs`。変えたら `npm run cries` を実行する
+- 動画の中での大きさは `src/audio.ts` の `CRY_VOLUME`（ナレーションより少し大きく聞こえるくらいにしてある）
+- 本編では「止まって鳴く → ナレーション → もう1回アクションして鳴く → 退場」の順。声がナレーションに重ならないように、シーンの長さは自動でのびる
+- エンディングでは、ナレーションのあとに1ぴきずつ鳴いて「ばいばい」
+- 口の開きは `cries.json` の折れ線に合わせて動く。なき声のファイルがないときは、鳴かずに前と同じ流れになる
 
 ## ナレーション（VOICEVOX）
 
@@ -22,7 +69,7 @@ npm run thumbnail   # out/thumb1.png（1280x720）に書き出す
 
 ナレーションの文章を変えたら、もう一度 `npm run voice` を実行してください。
 
-`public/voice/`・`public/bgm/`・`public/se/` は git に入れていません。音声は作り直せますし、BGM・効果音は素材サイトの規約で再配布できないことが多いためです。YouTube に出した回の音声や素材は、書き出した MP4 といっしょに git の外（クラウドドライブなど）に保存しておいてください。
+`public/voice/`・`public/cries/`・`public/bgm/`・`public/se/` は git に入れていません。音声となき声は作り直せますし、BGM・効果音は素材サイトの規約で再配布できないことが多いためです。YouTube に出した回の音声や素材は、書き出した MP4 といっしょに git の外（クラウドドライブなど）に保存しておいてください。
 
 ## BGM・効果音
 
@@ -33,17 +80,24 @@ npm run thumbnail   # out/thumb1.png（1280x720）に書き出す
 | `public/bgm/bgm.mp3` | ずっと流れる BGM（ナレーション中は小さくなる） |
 | `public/se/kira.mp3` | タイトルが出るとき |
 | `public/se/pop.mp3` | 名前テロップが出るとき |
-| `public/se/roar.mp3` | ティラノサウルスがほえる |
 | `public/se/stomp.mp3` | トリケラトプスの頭突き |
 | `public/se/munch.mp3` | ブラキオサウルスがもぐもぐ |
 | `public/se/swish.mp3` | ステゴサウルスのしっぽ |
 | `public/se/flap.mp3` | プテラノドンのはばたき |
 
+ティラノサウルスがほえる声は、なき声（`public/cries/trex.wav`）が受け持ちます。
+
 素材の例：[DOVA-SYNDROME](https://dova-s.jp/)（BGM）、[効果音ラボ](https://soundeffect-lab.info/)（効果音）。どちらも各サイトの利用規約を確認してから使ってください。
 
 ## 新しい回を作る
 
-`src/data/episode1.ts` をコピーして、恐竜・ナレーション・色を変えます。恐竜の絵は `src/dinos/`、動きは `src/animation/` にあります。
+`src/data/episode1.ts` をコピーして、恐竜・ナレーション・色を変えます。
+
+- タイトルの下のひとこと（`opening.subtitle`）、エンディングの大きな文字とひとこと（`ending.title` / `ending.subtitle`）もここに書きます
+- 恐竜の `color` と `accent` は、テロップの番号のまる・ひとことの帯・右上の進み具合の色に使います。3D の恐竜の体とおなかの色も、episode1 の色にそろえてあります（変えるときは `scripts/dino3d/<名前>.mjs` の `PAL` も直して `npm run dinos`）
+- 「だい 1 わ」の数字は `id`（`episode1` など）からとります
+
+デザインの部品：背景 `src/components/Background.tsx`（昼と夕方）、シールふうの文字とラベル `Sticker.tsx`、テロップと進み具合 `Telop.tsx`、アクションのふきだし `ActionBubble.tsx`（文字と位置は `Dino3DScene.tsx` の `STAGES`）。
 
 ## YouTube に出す前に
 

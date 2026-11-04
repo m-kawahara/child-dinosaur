@@ -1,72 +1,57 @@
 import React from "react";
-import { Audio, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { blinkAt, flapPose, walkPose } from "../animation/walk";
+import { AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { blinkAt } from "../animation/walk";
 import { SE_FILES, voiceFile } from "../audio";
-import { Background, GROUND_Y } from "../components/Background";
-import { Dino } from "../components/Dino";
-import { fontFamily } from "../components/font";
+import { Background, backgroundTransform } from "../components/Background";
+import { Pill, StickerText } from "../components/Sticker";
 import type { AudioAvailability, Episode, SceneTiming } from "../data/types";
+import { type Dino3DItem, Dinos3D } from "../three/Dino3D";
+import { modelOf } from "../three/models";
+import { STAGE_CAMERA } from "./Dino3DScene";
+import { lineup, walkInItems } from "./lineup";
 
-const TITLE_COLORS = ["#ff7b54", "#ffb938", "#5cc46b", "#4aa8e8", "#b58ad6", "#f08fb0"];
+/** "episode1" → 1 */
+export const episodeNumber = (episode: Episode) => Number(episode.id.match(/\d+/)?.[0] ?? 1);
 
-export const Title: React.FC<{ text: string; delay?: number; size?: number }> = ({ text, delay = 0, size = 130 }) => {
+// 恐竜の列は、シーンの7割くらいで並び終わる。速すぎると足がせかせかするので、画面の左から入るくらいの距離にする
+const PARADE_SPEED = 0.055;
+const SLOW_DOWN = 45;
+
+export const Opening: React.FC<{ episode: Episode; timing: SceneTiming; audio: AudioAvailability }> = ({ episode, timing, audio }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  return (
-    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", fontFamily, fontSize: size }}>
-      {[...text].map((ch, i) => {
-        const s = spring({ frame: frame - delay - i * 3, fps, config: { damping: 8, stiffness: 160 } });
-        const wobble = Math.sin((frame + i * 6) * 0.12) * 6 * s;
-        return (
-          <span
-            key={i}
-            style={{
-              display: "inline-block",
-              whiteSpace: "pre",
-              color: TITLE_COLORS[i % TITLE_COLORS.length],
-              WebkitTextStroke: `${size * 0.1}px #fff`,
-              paintOrder: "stroke fill",
-              textShadow: "0 10px 0 rgba(58,49,80,0.25)",
-              transform: `translateY(${(1 - s) * -400 + wobble}px) scale(${s})`,
-            }}
-          >
-            {ch}
-          </span>
-        );
-      })}
-    </div>
-  );
-};
-
-export const Opening: React.FC<{ episode: Episode; timing: SceneTiming; audio: AudioAvailability }> = ({
-  episode,
-  timing,
-  audio,
-}) => {
-  const frame = useCurrentFrame();
-  // 恐竜たちが シーンの間に 画面を横切るように
-  const speed = (2400 + episode.dinos.length * 330) / timing.duration;
+  const { width, height } = useVideoConfig();
+  const { slots, flyers } = lineup(episode.dinos);
+  const arrive = Math.round(timing.duration * 0.72);
+  const items: Dino3DItem[] = [
+    // まばたきは1ぴきずつずらす
+    ...walkInItems(slots, frame, arrive, PARADE_SPEED, SLOW_DOWN, (slot) => ({ blink: blinkAt(frame, 200 + Math.round(slot.x * 13)) })),
+    // 空の恐竜は、タイトルの上の空を横切る（タイトルのうしろだと、白い体が文字のすき間から見えてしまう）
+    ...flyers.map((d, i) => ({
+      name: modelOf(d.kind),
+      x: -11 + (22 * frame) / timing.duration - i * 3,
+      y: 7.55 + 0.12 * Math.sin(frame * 0.07) - i * 0.6,
+      scale: 0.5,
+      pose: { flap: frame / 18, idle: frame, blink: blinkAt(frame, 40 + i * 31) },
+    })),
+  ];
+  const titleChars = episode.title.replace(/\s/g, "").length;
   return (
     <>
       <Background frameOffset={timing.from} />
-      <div style={{ position: "absolute", top: 240, left: 0, right: 0 }}>
-        <Title text={episode.title} delay={10} />
+      <AbsoluteFill style={{ transform: backgroundTransform(frame + timing.from, 0) }}>
+        <Dinos3D items={items} width={width} height={height} camera={STAGE_CAMERA} />
+      </AbsoluteFill>
+      <div style={{ position: "absolute", top: 60, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 22 }}>
+        <Pill size={46} delay={2} rotate={-3}>
+          だい {episodeNumber(episode)} わ
+        </Pill>
+        <StickerText text={episode.title} size={168} delay={10} />
+        {episode.opening.subtitle ? (
+          <Pill size={42} delay={10 + titleChars * 3 + 12} style={{ marginTop: 10 }}>
+            {episode.opening.subtitle}
+          </Pill>
+        ) : null}
       </div>
-      {episode.dinos.map((dino, i) => {
-        const x = -250 - i * 330 + frame * speed;
-        const flying = dino.kind === "pteranodon";
-        const pose = flying ? flapPose(frame + i * 7) : walkPose(frame + i * 7);
-        return (
-          <Dino
-            key={dino.id}
-            dino={dino}
-            pose={{ ...pose, blink: blinkAt(frame, i * 17) }}
-            x={x}
-            y={flying ? 640 + (pose.bob ?? 0) : GROUND_Y + 20}
-            scale={0.45}
-          />
-        );
-      })}
       {timing.hasVoice ? (
         <Sequence from={timing.voiceStart} layout="none">
           <Audio src={staticFile(voiceFile("opening"))} />

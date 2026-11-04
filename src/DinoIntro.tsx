@@ -5,6 +5,7 @@ import type { AudioAvailability, Episode, SceneTiming } from "./data/types";
 import { DinoScene } from "./scenes/DinoScene";
 import { Ending } from "./scenes/Ending";
 import { Opening } from "./scenes/Opening";
+import { Dino3DScene, has3D } from "./scenes/Dino3DScene";
 
 export type DinoIntroProps = {
   episode: Episode;
@@ -32,15 +33,19 @@ export const DinoIntro: React.FC<DinoIntroProps> = ({ episode, scenes, audio }) 
   return (
     <AbsoluteFill style={{ backgroundColor: "#d9f3ff" }}>
       {scenes.map((timing) => {
-        const dino = episode.dinos.find((d) => d.id === timing.key);
+        const index = episode.dinos.findIndex((d) => d.id === timing.key);
+        const dino = episode.dinos[index];
+        const colors = episode.dinos.map((d) => d.color);
         return (
           <Sequence key={timing.key} from={timing.from} durationInFrames={timing.duration} name={timing.key}>
             {timing.key === "opening" ? (
               <Opening episode={episode} timing={timing} audio={audio} />
             ) : timing.key === "ending" ? (
-              <Ending episode={episode} timing={timing} />
+              <Ending episode={episode} timing={timing} audio={audio} />
+            ) : dino && has3D(dino.kind) ? (
+              <Dino3DScene dino={dino} timing={timing} audio={audio} index={index} colors={colors} />
             ) : dino ? (
-              <DinoScene dino={dino} timing={timing} audio={audio} />
+              <DinoScene dino={dino} timing={timing} audio={audio} index={index} colors={colors} />
             ) : null}
           </Sequence>
         );

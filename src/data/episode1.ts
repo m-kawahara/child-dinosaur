@@ -8,6 +8,7 @@ export const episode1: Episode = {
   voice: { speaker: 3, speed: 0.95, credit: "VOICEVOX:ずんだもん" },
   opening: {
     narration: "きょうりゅう だいしゅうごう！ きょうは、げんきな きょうりゅうたちが あそびに きたよ。",
+    subtitle: "げんきな きょうりゅうたちが あそびに きたよ",
   },
   dinos: [
     {
@@ -68,5 +69,7 @@ export const episode1: Episode = {
   ],
   ending: {
     narration: "みんな、あえて よかったね！ また いっしょに あそぼうね。ばいばーい！",
+    title: "またね！",
+    subtitle: "また いっしょに あそぼうね",
   },
 };
