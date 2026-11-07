@@ -77,7 +77,7 @@ export const Ending: React.FC<{ episode: Episode; timing: SceneTiming; audio: Au
       </div>
       {timing.hasVoice ? (
         <Sequence from={timing.voiceStart} layout="none">
-          <Audio src={staticFile(voiceFile("ending"))} />
+          <Audio src={staticFile(voiceFile(episode.id, "ending"))} />
         </Sequence>
       ) : null}
       {order.map((d) =>

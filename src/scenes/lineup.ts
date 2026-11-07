@@ -12,6 +12,8 @@ const LEFT = -8.0;
 const RIGHT = 8.0;
 const GAP = 0.25;
 const MAX_STRIDE = 1.15;
+/** 恐竜が少ない回で大きくなりすぎて、タイトルにかからないように（5ひきの回はこれより小さい） */
+const MAX_SCALE = 0.62;
 
 export type LineupSlot = { entry: DinoEntry; x: number; scale: number };
 
@@ -23,8 +25,11 @@ export const lineup = (dinos: DinoEntry[]) => {
     const m = MODEL_INFO[modelOf(d.kind)];
     return (m.front - m.back) * rel(d);
   });
-  const scale = (RIGHT - LEFT - GAP * (walkers.length - 1)) / lengths.reduce((a, b) => a + b, 0);
-  let cursor = LEFT;
+  const total = lengths.reduce((a, b) => a + b, 0);
+  const gaps = GAP * (walkers.length - 1);
+  const scale = Math.min(MAX_SCALE, (RIGHT - LEFT - gaps) / total);
+  // 小さくしたときは、列をまん中にそろえる
+  let cursor = (LEFT + RIGHT) / 2 - (total * scale + gaps) / 2;
   const slots: LineupSlot[] = walkers.map((entry) => {
     const m = MODEL_INFO[modelOf(entry.kind)];
     const s = scale * rel(entry);

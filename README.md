@@ -7,9 +7,16 @@
 ```sh
 npm install
 npm run studio      # ブラウザでプレビューしながら調整する
-npm run render      # out/episode1.mp4 に書き出す
-npm run thumbnail   # out/thumb1.png（1280x720）に書き出す
+npm run render      # だい1わ を out/episode1.mp4 に書き出す
+npm run thumbnail   # だい1わ のサムネイルを out/thumb1.png（1280x720）に書き出す
+npm run render:2    # だい2わ（おすもう）を out/episode2.mp4 に
+npm run thumbnail:2 # out/thumb2.png
 ```
+
+| 回 | データ | Studio の名前 |
+| --- | --- | --- |
+| だい1わ きょうりゅう だいしゅうごう！（5ひきの紹介） | `src/data/episode1.ts` | `episode1` / `thumbnail-episode1` |
+| だい2わ きょうりゅう おすもう たいかい！（ティラノサウルス vs トリケラトプス） | `src/data/episode2.ts` | `episode2` / `thumbnail-episode2` |
 
 ## 3D の恐竜
 
@@ -61,13 +68,14 @@ Studio の `Dino3DTest` で1ぴきずつ見られます（`name` と `view` を�
 ## ナレーション（VOICEVOX）
 
 1. [VOICEVOX](https://voicevox.hiroshiba.jp/) を入れて起動する
-2. `npm run voice` を実行すると `public/voice/*.wav` と `durations.json` ができる
+2. `npm run voice` を実行すると `public/voice/episode1/*.wav` と `durations.json` ができる
+   - だい2わ は `npm run voice:2`（`npm run voice -- --episode episode2` と同じ）。声は回ごとのフォルダ `public/voice/<回>/` に分かれる
    - 話者の一覧：`npm run voice -- --list`
-   - 話者と速さは `src/data/episode1.ts` の `voice` に書く（クレジットの文字もここ）
+   - 話者と速さは `src/data/<回>.ts` の `voice` に書く（クレジットの文字もここ）
    - ためしに別の声で聞く：`npm run voice -- --speaker 8`
 3. 各シーンの長さは、声の長さに合わせて自動で変わる（声がないときは文字数から見積もる）
 
-ナレーションの文章を変えたら、もう一度 `npm run voice` を実行してください。
+ナレーションの文章を変えたら、もう一度 `npm run voice`（だい2わ は `npm run voice:2`）を実行してください。シーンの時間を確かめるときは `node scripts/print-timeline.mjs episode2`。
 
 `public/voice/`・`public/cries/`・`public/bgm/`・`public/se/` は git に入れていません。音声となき声は作り直せますし、BGM・効果音は素材サイトの規約で再配布できないことが多いためです。YouTube に出した回の音声や素材は、書き出した MP4 といっしょに git の外（クラウドドライブなど）に保存しておいてください。
 
@@ -80,7 +88,7 @@ Studio の `Dino3DTest` で1ぴきずつ見られます（`name` と `view` を�
 | `public/bgm/bgm.mp3` | ずっと流れる BGM（ナレーション中は小さくなる） |
 | `public/se/kira.mp3` | タイトルが出るとき |
 | `public/se/pop.mp3` | 名前テロップが出るとき |
-| `public/se/stomp.mp3` | トリケラトプスの頭突き |
+| `public/se/stomp.mp3` | トリケラトプスの頭突き、おすもうでぶつかるとき |
 | `public/se/munch.mp3` | ブラキオサウルスがもぐもぐ |
 | `public/se/swish.mp3` | ステゴサウルスのしっぽ |
 | `public/se/flap.mp3` | プテラノドンのはばたき |
@@ -91,11 +99,23 @@ Studio の `Dino3DTest` で1ぴきずつ見られます（`name` と `view` を�
 
 ## 新しい回を作る
 
-`src/data/episode1.ts` をコピーして、恐竜・ナレーション・色を変えます。
+`src/data/episode1.ts` をコピーして、恐竜・ナレーション・色を変え、`src/data/episodes.ts` の `EPISODES` に足します（Studio に回の名前で出てきます）。`package.json` に `render:N` などを足しておくと便利です。
 
 - タイトルの下のひとこと（`opening.subtitle`）、エンディングの大きな文字とひとこと（`ending.title` / `ending.subtitle`）もここに書きます
 - 恐竜の `color` と `accent` は、テロップの番号のまる・ひとことの帯・右上の進み具合の色に使います。3D の恐竜の体とおなかの色も、episode1 の色にそろえてあります（変えるときは `scripts/dino3d/<名前>.mjs` の `PAL` も直して `npm run dinos`）
 - 「だい 1 わ」の数字は `id`（`episode1` など）からとります
+
+### おすもうの取組（`bout`）
+
+`episode2.ts` のように `bout` を書くと、恐竜の紹介のあとに取組のシーン（`src/scenes/BoutScene.tsx`）が入ります。けがをしない、かわいいおすもうです。
+
+- `east` / `west` は恐竜の id。いまの振り付けは east がティラノサウルス、west がトリケラトプス（west が勝つ）用です
+- 場面は「face（はっけよい）→ charge（のこった）→ roar（ほえて押す）→ comeback（押し返す）→ finish（しりもち）→ winner（勝ち）→ friends（なかなおり）」。`lines` に場面ごとのナレーション、`captions` に大きく出す文字を書きます
+- 動き（位置・押し合い・しりもち）と土俵の大きさは `src/animation/bout.ts` の `BOUT` と `BEATS`。足がすべらないように、位置の動きから歩きを計算しています（押されて下がるときは後ろ向きに歩く）
+- 場面の長さは `src/data/timeline.ts` の `BEAT_FRAMES`。ほえる場面と勝った場面は、なき声のあとにナレーションが始まります
+- 押し合いのポーズは `lean`（前へ押す / 後ろでこらえる）、しりもちは `sit`（ティラノサウルスだけ。形は `trexRig.ts` の `SIT`）
+- 土俵は `src/components/Dohyo.tsx`（3D と同じカメラで地面に描く）
+- `bout` がある回のサムネイルは、2ひきが向き合う「VS」の絵になります
 
 デザインの部品：背景 `src/components/Background.tsx`（昼と夕方）、シールふうの文字とラベル `Sticker.tsx`、テロップと進み具合 `Telop.tsx`、アクションのふきだし `ActionBubble.tsx`（文字と位置は `Dino3DScene.tsx` の `STAGES`）。
 

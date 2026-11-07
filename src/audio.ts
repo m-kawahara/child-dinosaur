@@ -16,7 +16,9 @@ export const ACTION_SE: Partial<Record<DinoAction, string>> = {
 
 export const BGM_FILE = "bgm/bgm.mp3";
 
-export const voiceFile = (key: string) => `voice/${key}.wav`;
+/** ナレーションの声は回ごとのフォルダに置く（npm run voice -- --episode <id>） */
+export const voiceFile = (episodeId: string, key: string) => `voice/${episodeId}/${key}.wav`;
+export const voiceDurationsFile = (episodeId: string) => `voice/${episodeId}/durations.json`;
 
 /** npm run cries で作る、なき声と、その長さ・口の動き */
 export const CRIES_FILE = "cries/cries.json";

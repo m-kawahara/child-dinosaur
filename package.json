@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "studio": "remotion studio",
-    "render": "remotion render DinoIntro out/episode1.mp4",
-    "thumbnail": "remotion still Thumbnail out/thumb1.png",
+    "render": "remotion render episode1 out/episode1.mp4",
+    "render:2": "remotion render episode2 out/episode2.mp4",
+    "thumbnail": "remotion still thumbnail-episode1 out/thumb1.png",
+    "thumbnail:2": "remotion still thumbnail-episode2 out/thumb2.png",
     "voice": "node scripts/generate-voice.mjs",
+    "voice:2": "node scripts/generate-voice.mjs --episode episode2",
     "dinos": "node scripts/build-dinos.mjs",
     "cries": "node scripts/generate-cries.mjs",
     "typecheck": "tsc --noEmit"

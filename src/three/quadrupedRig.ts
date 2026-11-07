@@ -75,6 +75,15 @@ export abstract class QuadrupedRig extends DinoRig {
       this.bone(`tail${i}`).rotation.set(0, h, v - (i === 1 ? pitch : 0));
     }
 
+    // 押し合い：腰ごと前（後ろ）へ出て、前へ押すときは頭を下げる。足はこのあと地面に合わせるので残る
+    const lean = pose.lean ?? 0;
+    if (lean !== 0) {
+      hips.position.x += 0.35 * lean;
+      hips.position.y -= 0.05 * Math.abs(lean);
+      hips.rotation.z -= 0.04 * lean;
+      this.bone(spec.necks[0]).rotation.z -= 0.08 * lean;
+    }
+
     this.adjustBody(pose, { k, ph, idle, calm });
 
     const gait = { ...spec.gait, stride: spec.gait.stride * k, lift: spec.gait.lift * k };
