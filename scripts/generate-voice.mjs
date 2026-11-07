@@ -1,17 +1,24 @@
 // VOICEVOX でナレーション音声を作る。
 // 使い方: VOICEVOX アプリを起動してから `npm run voice`
-//   話者と速さは src/data/episode1.ts の voice に書く（あとで同じ声で作り直せるように）
+//   回を選ぶ:     `npm run voice -- --episode episode2`（省略すると episode1。npm run voice:2 も同じ）
+//   話者と速さは src/data/<回>.ts の voice に書く（あとで同じ声で作り直せるように）
 //   話者の一覧:   `npm run voice -- --list`
-//   ためしに別の声で聞く: `npm run voice -- --speaker 8`（episode1.ts は変わらない）
+//   ためしに別の声で聞く: `npm run voice -- --speaker 8`（<回>.ts は変わらない）
+//   できるのは public/voice/<回>/*.wav と durations.json
 import { mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
-const { episode1 } = await import("../src/data/episode1.ts");
+const { BOUT_BEATS, boutVoiceKey } = await import("../src/data/timeline.ts");
+
+const { values: args } = parseArgs({ options: { episode: { type: "string", default: "episode1" } }, strict: false });
+const episodeId = String(args.episode);
+const episode = (await import(`../src/data/${episodeId}.ts`))[episodeId];
 
 const { values } = parseArgs({
   options: {
-    speaker: { type: "string", default: String(episode1.voice.speaker) },
-    speed: { type: "string", default: String(episode1.voice.speed) },
+    episode: { type: "string" },
+    speaker: { type: "string", default: String(episode.voice.speaker) },
+    speed: { type: "string", default: String(episode.voice.speed) },
     host: { type: "string", default: "http://127.0.0.1:50021" },
     list: { type: "boolean", default: false },
   },
@@ -46,12 +53,13 @@ const wavSeconds = (buf) => {
 };
 
 const lines = [
-  ["opening", episode1.opening.narration],
-  ...episode1.dinos.map((d) => [d.id, d.narration]),
-  ["ending", episode1.ending.narration],
+  ["opening", episode.opening.narration],
+  ...episode.dinos.map((d) => [d.id, d.narration]),
+  ...(episode.bout ? BOUT_BEATS.map((beat) => [boutVoiceKey(beat), episode.bout.lines[beat]]) : []),
+  ["ending", episode.ending.narration],
 ];
 
-const outDir = new URL("../public/voice/", import.meta.url);
+const outDir = new URL(`../public/voice/${episodeId}/`, import.meta.url);
 await mkdir(outDir, { recursive: true });
 const durations = {};
 
@@ -76,4 +84,4 @@ for (const [key, text] of lines) {
 }
 
 await writeFile(new URL("durations.json", outDir), JSON.stringify(durations, null, 2) + "\n");
-console.log("public/voice/durations.json を書きました");
+console.log(`public/voice/${episodeId}/durations.json を書きました`);

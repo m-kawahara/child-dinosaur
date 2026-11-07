@@ -19,7 +19,18 @@ const BACK_SPOTS = [
   { x: 10.4, z: -4.5 },
 ];
 
+/** おすもうの回：東（左）と西（右）が、こちらへ少し体を向けて押し合う */
+const BOUT_CAMERA = { position: [0, 3.4, 21] as [number, number, number], lookAt: [0, 5.6, 0] as [number, number, number], fov: 36 };const boutItems = (episode: Episode): Dino3DItem[] => {
+  const bout = episode.bout!;
+  const model = (id: string) => modelOf(episode.dinos.find((d) => d.id === id)!.kind);
+  return [
+    { name: model(bout.east), x: -5.6, z: 0.6, turn: -0.3, pose: { jaw: 1, raise: 0.5, lean: 0.4, idle: 0 } },
+    { name: model(bout.west), x: 5.9, z: 0.6, turn: Math.PI + 0.3, scale: 1.1, pose: { butt: 0.6, lean: 0.6, jaw: 0.2, idle: 20 } },
+  ];
+};
+
 const items = (episode: Episode): Dino3DItem[] => {
+  if (episode.bout) return boutItems(episode);
   const [star, ...rest] = episode.dinos;
   const walkers = rest.filter((d) => !MODEL_INFO[modelOf(d.kind)].flies);
   const flyers = rest.filter((d) => MODEL_INFO[modelOf(d.kind)].flies);
@@ -45,10 +56,15 @@ export const Thumbnail: React.FC<{ episode: Episode }> = ({ episode }) => (
       </g>
     </svg>
     <AbsoluteFill>
-      <Dinos3D items={items(episode)} width={1920} height={1080} camera={CAMERA} />
+      <Dinos3D items={items(episode)} width={1920} height={1080} camera={episode.bout ? BOUT_CAMERA : CAMERA} />
     </AbsoluteFill>
+    {episode.bout ? (
+      <div style={{ position: "absolute", left: 0, right: 0, top: 440 }}>
+        <StickerText text="VS" size={210} colors={["#ff4d4d", "#ffffff"]} letterSpacing={-6} />
+      </div>
+    ) : null}
     <div style={{ position: "absolute", top: 34, left: 0, right: 0 }}>
-      <StickerText text={episode.title} size={196} colors={TITLE_COLORS} letterSpacing={3} lineHeight={1.08} />
+      <StickerText text={episode.title} size={episode.bout ? 172 : 196} colors={TITLE_COLORS} letterSpacing={3} lineHeight={1.08} />
     </div>
     <div style={{ position: "absolute", top: 40, left: 40 }}>
       <Pill size={54} rotate={-6} background={INK} color="#fff">
@@ -57,7 +73,7 @@ export const Thumbnail: React.FC<{ episode: Episode }> = ({ episode }) => (
     </div>
     <div style={{ position: "absolute", right: 70, bottom: 40 }}>
       <Pill size={72} rotate={-3} background="#ff7b54" color="#fff" style={{ borderRadius: 42 }}>
-        {episode.dinos.length}ひき とうじょう！
+        {episode.bout ? "おすもう たいけつ！" : `${episode.dinos.length}ひき とうじょう！`}
       </Pill>
     </div>
   </AbsoluteFill>

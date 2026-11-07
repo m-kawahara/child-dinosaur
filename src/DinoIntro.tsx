@@ -2,6 +2,7 @@ import React from "react";
 import { AbsoluteFill, Audio, interpolate, Sequence, staticFile, useVideoConfig } from "remotion";
 import { BGM_FILE } from "./audio";
 import type { AudioAvailability, Episode, SceneTiming } from "./data/types";
+import { BoutScene } from "./scenes/BoutScene";
 import { DinoScene } from "./scenes/DinoScene";
 import { Ending } from "./scenes/Ending";
 import { Opening } from "./scenes/Opening";
@@ -19,9 +20,11 @@ const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
 export const DinoIntro: React.FC<DinoIntroProps> = ({ episode, scenes, audio }) => {
   const { durationInFrames } = useVideoConfig();
+  // 取組のシーンは、場面ごとにナレーションがある
   const voiceRanges = scenes
-    .filter((s) => s.hasVoice)
-    .map((s) => [s.from + s.voiceStart, s.from + s.voiceStart + s.voiceFrames] as const);
+    .flatMap((s) => [s, ...(s.beats ?? []).map((b) => ({ ...b, from: s.from }))])
+    .filter((v) => v.hasVoice)
+    .map((v) => [v.from + v.voiceStart, v.from + v.voiceStart + v.voiceFrames] as const);
 
   // ナレーション中はBGMを小さく。最後はフェードアウト
   const bgmVolume = (f: number) => {
@@ -42,10 +45,12 @@ export const DinoIntro: React.FC<DinoIntroProps> = ({ episode, scenes, audio }) 
               <Opening episode={episode} timing={timing} audio={audio} />
             ) : timing.key === "ending" ? (
               <Ending episode={episode} timing={timing} audio={audio} />
+            ) : timing.key === "bout" ? (
+              <BoutScene episode={episode} timing={timing} audio={audio} />
             ) : dino && has3D(dino.kind) ? (
-              <Dino3DScene dino={dino} timing={timing} audio={audio} index={index} colors={colors} />
+              <Dino3DScene episodeId={episode.id} dino={dino} timing={timing} audio={audio} index={index} colors={colors} />
             ) : dino ? (
-              <DinoScene dino={dino} timing={timing} audio={audio} index={index} colors={colors} />
+              <DinoScene episodeId={episode.id} dino={dino} timing={timing} audio={audio} index={index} colors={colors} />
             ) : null}
           </Sequence>
         );

@@ -1,7 +1,7 @@
 import React from "react";
 import { type CalculateMetadataFunction, Composition, staticFile, Still } from "remotion";
-import { ACTION_SE, BGM_FILE, CRIES_FILE, SE_FILES } from "./audio";
-import { episode1 } from "./data/episode1";
+import { ACTION_SE, BGM_FILE, CRIES_FILE, SE_FILES, voiceDurationsFile } from "./audio";
+import { EPISODES } from "./data/episodes";
 import { buildTimeline } from "./data/timeline";
 import type { Cries, VoiceDurations } from "./data/types";
 import { DinoIntro, type DinoIntroProps } from "./DinoIntro";
@@ -25,7 +25,7 @@ const exists = async (path: string) => {
 const loadJson = async <T,>(path: string, fallback: T): Promise<T> => ((await exists(path)) ? (await fetch(staticFile(path))).json() : fallback);
 
 const calculateMetadata: CalculateMetadataFunction<DinoIntroProps> = async ({ props }) => {
-  const durations = await loadJson<VoiceDurations>("voice/durations.json", {});
+  const durations = await loadJson<VoiceDurations>(voiceDurationsFile(props.episode.id), {});
   const cries = await loadJson<Cries>(CRIES_FILE, {});
   const { scenes, total } = buildTimeline(props.episode, durations, FPS, cries);
   const sePaths = [...Object.values(SE_FILES), ...Object.values(ACTION_SE)].filter((p): p is string => p !== undefined);
@@ -40,21 +40,27 @@ const calculateMetadata: CalculateMetadataFunction<DinoIntroProps> = async ({ pr
   };
 };
 
-const initial = buildTimeline(episode1, {}, FPS);
-
+// 回ごとに、動画（id は "episode1" など）とサムネイル（"thumbnail-episode1" など）
 export const RemotionRoot: React.FC = () => (
   <>
-    <Composition
-      id="DinoIntro"
-      component={DinoIntro}
-      width={1920}
-      height={1080}
-      fps={FPS}
-      durationInFrames={initial.total}
-      defaultProps={{ episode: episode1, scenes: initial.scenes, audio: { bgm: false, se: {}, cries: {} } }}
-      calculateMetadata={calculateMetadata}
-    />
-    <Still id="Thumbnail" component={Thumbnail} width={1280} height={720} defaultProps={{ episode: episode1 }} />
+    {EPISODES.map((episode) => {
+      const initial = buildTimeline(episode, {}, FPS);
+      return (
+        <React.Fragment key={episode.id}>
+          <Composition
+            id={episode.id}
+            component={DinoIntro}
+            width={1920}
+            height={1080}
+            fps={FPS}
+            durationInFrames={initial.total}
+            defaultProps={{ episode, scenes: initial.scenes, audio: { bgm: false, se: {}, cries: {} } }}
+            calculateMetadata={calculateMetadata}
+          />
+          <Still id={`thumbnail-${episode.id}`} component={Thumbnail} width={1280} height={720} defaultProps={{ episode }} />
+        </React.Fragment>
+      );
+    })}
     <Composition
       id="Dino3DTest"
       component={Dino3DTest}

@@ -20,7 +20,7 @@ import { TREX_STRIDE_WORLD } from "../three/trexRig";
 // 横から見るカメラ。地面 y=0 が背景の砂地（GROUND_Y あたり）に来るように合わせてある
 export const STAGE_CAMERA: CameraSpec = { position: [0, 3.5, 28], lookAt: [0, 3.5, 0], fov: 20 };
 /** STAGE_CAMERA を k 倍うしろへ引いたカメラ。地面の位置は同じまま、恐竜が 1/k の大きさに見える（頭がテロップにかからないように） */
-const pulledBack = (k: number): CameraSpec => ({ position: [0, 3.5 * k, 28 * k], lookAt: [0, 3.5 * k, 0], fov: 20 });
+export const pulledBack = (k: number): CameraSpec => ({ position: [0, 3.5 * k, 28 * k], lookAt: [0, 3.5 * k, 0], fov: 20 });
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
@@ -178,13 +178,14 @@ const PX_PER_WORLD = 109;
 
 /** 3D の恐竜のシーン。画面の外から来て止まり、アクションをして、出ていく */
 export const Dino3DScene: React.FC<{
+  episodeId: string;
   dino: DinoEntry;
   timing: SceneTiming;
   audio: AudioAvailability;
   /** 何ひき目か（0 から）と、全員の色（右上の進み具合に使う） */
   index: number;
   colors: string[];
-}> = ({ dino, timing, audio, index, colors }) => {
+}> = ({ episodeId, dino, timing, audio, index, colors }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const stage = STAGES[dino.kind]!;
@@ -229,7 +230,7 @@ export const Dino3DScene: React.FC<{
       <SceneProgress colors={colors} current={index} from={enter - 10} until={exitStart} />
       {timing.hasVoice ? (
         <Sequence from={timing.voiceStart} layout="none">
-          <Audio src={staticFile(voiceFile(dino.id))} />
+          <Audio src={staticFile(voiceFile(episodeId, dino.id))} />
         </Sequence>
       ) : null}
       {audio.se[SE_FILES.pop] ? (

@@ -30,6 +30,10 @@ export type DinoPose3D = {
   /** 飛ぶときの体の傾き（左右・前後。ラジアン） */
   bank?: number;
   pitch?: number;
+  /** おすもうの押し合い -1〜1。足は地面につけたまま、体を前（+、押す）や後ろ（−、こらえる）へ傾ける */
+  lean?: number;
+  /** しりもち 0〜1（ティラノサウルスだけ） */
+  sit?: number;
 };
 
 export type V2 = { x: number; y: number };

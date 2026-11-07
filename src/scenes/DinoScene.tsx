@@ -11,7 +11,15 @@ import type { AudioAvailability, DinoEntry, SceneTiming } from "../data/types";
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
-export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: AudioAvailability; index: number; colors: string[] }> = ({
+export const DinoScene: React.FC<{
+  episodeId: string;
+  dino: DinoEntry;
+  timing: SceneTiming;
+  audio: AudioAvailability;
+  index: number;
+  colors: string[];
+}> = ({
+  episodeId,
   dino,
   timing,
   audio,
@@ -53,7 +61,7 @@ export const DinoScene: React.FC<{ dino: DinoEntry; timing: SceneTiming; audio: 
       <SceneProgress colors={colors} current={index} from={ENTER_FRAMES - 10} until={exitStart} />
       {timing.hasVoice ? (
         <Sequence from={timing.voiceStart} layout="none">
-          <Audio src={staticFile(voiceFile(dino.id))} />
+          <Audio src={staticFile(voiceFile(episodeId, dino.id))} />
         </Sequence>
       ) : null}
       {audio.se[SE_FILES.pop] ? (

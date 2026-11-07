@@ -54,7 +54,7 @@ export const Opening: React.FC<{ episode: Episode; timing: SceneTiming; audio: A
       </div>
       {timing.hasVoice ? (
         <Sequence from={timing.voiceStart} layout="none">
-          <Audio src={staticFile(voiceFile("opening"))} />
+          <Audio src={staticFile(voiceFile(episode.id, "opening"))} />
         </Sequence>
       ) : null}
       {audio.se[SE_FILES.title] ? (

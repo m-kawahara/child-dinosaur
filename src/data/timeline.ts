@@ -1,4 +1,4 @@
-import type { Cries, DinoAction, DinoEntry, DinoKind, Episode, SceneTiming, VoiceDurations } from "./types";
+import type { BeatTiming, BoutBeat, Cries, DinoAction, DinoEntry, DinoKind, Episode, SceneTiming, VoiceDurations } from "./types";
 
 export const ENTER_FRAMES = 75;
 export const EXIT_FRAMES = 60;
@@ -68,6 +68,13 @@ export const buildTimeline = (episode: Episode, durations: VoiceDurations, fps: 
     push(dino.id, enter + cryLead, v, enter + stand + exit);
   }
 
+  if (episode.bout) {
+    const beats = boutBeats(episode, fps, cries, voice);
+    const total = beats.reduce((n, b) => n + b.duration, 0);
+    push("bout", 0, { hasVoice: false, voiceFrames: 0 }, total);
+    scenes[scenes.length - 1].beats = beats;
+  }
+
   // エンディング：なき声があるときは、ナレーションのあとに1ぴきずつ鳴く時間をとる
   const ed = voice("ending", episode.ending.narration);
   const criers = episode.dinos.filter((d) => cries[d.kind]).length;
@@ -75,4 +82,58 @@ export const buildTimeline = (episode: Episode, durations: VoiceDurations, fps: 
   push("ending", 20, ed, Math.max(6 * fps, 20 + ed.voiceFrames + goodbye));
 
   return { scenes, total: cursor };
+};
+
+/** 取組の場面の順番 */
+export const BOUT_BEATS: BoutBeat[] = ["face", "charge", "roar", "comeback", "finish", "winner", "friends"];
+export const boutVoiceKey = (beat: BoutBeat) => `bout-${beat}`;
+
+/**
+ * 取組の場面ごとの時間（フレーム）。lead は動きを見せてからナレーションを始めるまで、
+ * min は場面の最低の長さ（動きが終わるまで）、tail はナレーションのあとの余白。
+ * roar と winner の lead は、なき声があればその長さにする（声がナレーションに重ならないように）
+ */
+export const BEAT_FRAMES: Record<BoutBeat, { lead: number; min: number; tail: number }> = {
+  face: { lead: 30, min: 210, tail: 20 },
+  charge: { lead: 22, min: 140, tail: 15 },
+  roar: { lead: ACTION_FRAMES.roar, min: 150, tail: 25 },
+  comeback: { lead: 15, min: 115, tail: 15 },
+  finish: { lead: 55, min: 120, tail: 20 },
+  winner: { lead: 45, min: 100, tail: 25 },
+  friends: { lead: 20, min: 175, tail: 30 },
+};
+
+/** なき声のある場面で、なき声を始めるフレーム（場面の頭から） */
+export const BOUT_CRY_DELAY = ACTION_DELAY;
+
+/** 場面ごとの「なき声 → ナレーション」の前置き */
+export const beatLead = (beat: BoutBeat, cryKind: DinoKind | undefined, cries: Cries, fps: number) => {
+  const cry = cryKind ? cries[cryKind] : undefined;
+  const base = BEAT_FRAMES[beat].lead;
+  return cry ? Math.max(base, BOUT_CRY_DELAY + Math.ceil(cry.seconds * fps) + CRY_GAP) : base;
+};
+
+/** その場面で鳴く恐竜（east はほえる場面、west は勝った場面） */
+export const beatCrier = (episode: Episode, beat: BoutBeat): DinoKind | undefined => {
+  const id = beat === "roar" ? episode.bout?.east : beat === "winner" ? episode.bout?.west : undefined;
+  return episode.dinos.find((d) => d.id === id)?.kind;
+};
+
+const boutBeats = (
+  episode: Episode,
+  fps: number,
+  cries: Cries,
+  voice: (key: string, text: string) => { hasVoice: boolean; voiceFrames: number },
+): BeatTiming[] => {
+  const bout = episode.bout!;
+  let from = 0;
+  return BOUT_BEATS.map((beat) => {
+    const v = voice(boutVoiceKey(beat), bout.lines[beat]);
+    const lead = beatLead(beat, beatCrier(episode, beat), cries, fps);
+    const { min, tail } = BEAT_FRAMES[beat];
+    const duration = Math.max(min, lead + v.voiceFrames + tail);
+    const timing: BeatTiming = { beat, from, duration, voiceStart: from + lead, ...v };
+    from += duration;
+    return timing;
+  });
 };
