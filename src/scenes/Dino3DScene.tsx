@@ -60,7 +60,7 @@ const STAGES: Partial<Record<DinoKind, Stage3D>> = {
     model: "trex",
     camera: pulledBack(1.1),
     strideWorld: TREX_STRIDE_WORLD,
-    cycle: 24,
+    cycle: 34, // 大きな動物らしく、ゆっくり大きな歩幅で
     maxStride: 1.15,
     standX: -2.2, // 口の右に、ふきだしが入るところ
     slowDown: 45,

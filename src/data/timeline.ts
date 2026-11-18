@@ -26,7 +26,7 @@ export const endingFirstAction = (timing: SceneTiming, withCries: boolean) =>
 
 // 3D の恐竜は本物らしい歩幅で歩くので、出入りに時間をかける（速くすると足がすべる）
 const STAGE_FRAMES_3D: Partial<Record<DinoKind, { enter: number; exit: number }>> = {
-  trex: { enter: 140, exit: 155 },
+  trex: { enter: 175, exit: 210 }, // ゆっくり大きな歩幅で歩くので長め
   triceratops: { enter: 150, exit: 145 },
   stegosaurus: { enter: 170, exit: 150 },
   brachiosaurus: { enter: 185, exit: 185 },

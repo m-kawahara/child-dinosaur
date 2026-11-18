@@ -17,8 +17,8 @@ import { pulledBack } from "./Dino3DScene";
 const CAMERA = pulledBack(1.45);
 /** トリケラトプスを少し大きくして、ティラノサウルスと釣り合わせる */
 const WEST_SCALE = 1.15;
-/** 歩きの1周期のフレーム数（Dino3DScene と同じ） */
-const CYCLE = { east: 24, west: 20 };
+/** 歩きの1周期のフレーム数。ティラノは Dino3DScene（34）より少し速め（歩いて入ってくるときに足がすべらないように） */
+const CYCLE = { east: 30, west: 20 };
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
