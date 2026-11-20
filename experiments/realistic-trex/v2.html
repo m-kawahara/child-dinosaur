@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Realistic T-Rex v2</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 13px/1.4 system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: auto; max-height: calc(100vh - 28px); object-fit: contain; background: #000; }
+  #status { padding: 4px 8px; height: 20px; white-space: nowrap; overflow: hidden; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="status">準備中…</div>
+<!--
+  リアルなティラノサウルス v2：霧の森で、こちらを向いてほえる。
+  v1（index.html）からの変更：
+  - 姿勢：首を下げてこちらへ向け、口を大きく開けてほえる。片足を前に出して、しっぽは S 字に
+  - 頭：目の上の骨を張り出させ、目を小さく奥に。目のまわりと鼻すじは赤み。歯は太く、先が後ろへ曲がる
+  - 皮ふ：小石のような丸いウロコ、ところどころ大きなこぶ、首とのどとおなかの深いしわ。こげ茶の背中と、クリーム色ののど
+  - 景色：霧の針葉樹林。木もれ日と、霧の中の光のすじ。手前と奥にシダ
+-->
+<script id="trace" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+precision highp int;
+
+uniform vec2 uRes;
+uniform float uSample;
+uniform sampler2D uAccum;
+uniform vec3 uCamPos;
+uniform vec3 uCamTarget;
+uniform float uFov;
+uniform float uFocus;
+uniform float uAperture;
+uniform int uZero; // いつも 0。ループを展開させない（シェーダーの準備が長くかからないように）
+#define ZERO uZero
+out vec4 fragColor;
+
+// ============================================================
+// 乱数・ノイズ
+// ============================================================
+uint seed;
+uint pcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
+float rnd() { seed = pcg(seed); return float(seed) / 4294967296.0; }
+
+float hash11(float p) { p = fract(p * .1031); p *= p + 33.33; p *= p + p; return fract(p); }
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hash13(vec3 p3) { p3 = fract(p3 * .1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
+vec3 hash33(vec3 p3) { p3 = fract(p3 * vec3(.1031, .1030, .0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yxx) * p3.zyx); }
+vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+
+float noise2(vec2 x) {
+  vec2 i = floor(x); vec2 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+float noise3(vec3 x) {
+  vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float fbm2(vec2 p) { float s = 0.0, a = 0.5; for (int i = ZERO; i < 5; i++) { s += a * noise2(p); p = p * 2.03 + vec2(7.1, 3.3); a *= 0.5; } return s; }
+float fbm3(vec3 p) { float s = 0.0, a = 0.5; for (int i = ZERO; i < 4; i++) { s += a * noise3(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return s; }
+
+// 3D のボロノイ：いちばん近い点と2番目の距離、いちばん近いセルの乱数
+vec3 voronoi(vec3 x) {
+  vec3 i = floor(x); vec3 f = fract(x);
+  float f1 = 8.0, f2 = 8.0, id = 0.0;
+  for (int k = ZERO - 1; k <= 1; k++)
+  for (int j = ZERO - 1; j <= 1; j++)
+  for (int l = ZERO - 1; l <= 1; l++) {
+    vec3 g = vec3(float(l), float(j), float(k));
+    vec3 r = g + hash33(i + g) * 0.9 + 0.05 - f;
+    float d = dot(r, r);
+    if (d < f1) { f2 = f1; f1 = d; id = hash13(i + g + 17.17); }
+    else if (d < f2) { f2 = d; }
+  }
+  return vec3(sqrt(f1), sqrt(f2), id);
+}
+vec3 voronoi2(vec2 x) {
+  vec2 i = floor(x); vec2 f = fract(x);
+  float f1 = 8.0, f2 = 8.0, id = 0.0;
+  for (int j = ZERO - 1; j <= 1; j++)
+  for (int l = ZERO - 1; l <= 1; l++) {
+    vec2 g = vec2(float(l), float(j));
+    vec2 r = g + hash22(i + g) - f;
+    float d = dot(r, r);
+    if (d < f1) { f2 = f1; f1 = d; id = hash12(i + g + 5.3); }
+    else if (d < f2) { f2 = d; }
+  }
+  return vec3(sqrt(f1), sqrt(f2), id);
+}
+
+// ============================================================
+// 形の部品
+// ============================================================
+float smin(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+float smax(float a, float b, float k) { return -smin(-a, -b, k); }
+float sdSphere(vec3 p, vec3 c, float r) { return length(p - c) - r; }
+float sdEllipsoid(vec3 p, vec3 c, vec3 r) { p -= c; float k0 = length(p / r); float k1 = length(p / (r * r)); return k0 * (k0 - 1.0) / k1; }
+float sdRoundCone(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a; float l2 = dot(ba, ba); float rr = r1 - r2; float a2 = l2 - rr * rr; float il2 = 1.0 / l2;
+  vec3 pa = p - a; float y = dot(pa, ba); float z = y - l2;
+  vec3 xv = pa * l2 - ba * y; float x2 = dot(xv, xv); float y2 = y * y * l2; float z2 = z * z * l2;
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+}
+// a→b を長い軸にした楕円体（横の太さ rs、z の太さ rz）
+float sdEllAxis(vec3 p, vec3 a, vec3 b, float rs, float rz) {
+  vec3 c = 0.5 * (a + b); vec3 u = b - a; float h = 0.5 * length(u); u /= 2.0 * h;
+  vec3 v = normalize(vec3(-u.y, u.x, 0.0)); vec3 w = cross(u, v);
+  vec3 q = p - c;
+  return sdEllipsoid(vec3(dot(q, u), dot(q, v), dot(q, w)), vec3(0.0), vec3(h, rs, rz));
+}
+vec2 rot2(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(v.x * c - v.y * s, v.x * s + v.y * c); }
+
+// ============================================================
+// 光
+// ============================================================
+const vec3 SUN = vec3(0.4854, 0.8630, 0.1402); // normalize(0.45, 0.8, 0.13)：前の上から差しこむ木もれ日
+const vec3 SUN_C = vec3(1.0, 0.9, 0.72) * 4.0;
+const float CANOPY_Y = 24.0; // 木の葉の天井の高さ
+
+// 木の葉のすきまから日が差すか（0〜1）。点から太陽の方向へのばして、天井の高さで見る
+float canopyLight(vec3 x) {
+  float tc = max(CANOPY_Y - x.y, 0.0) / SUN.y;
+  vec2 c = x.xz + SUN.xz * tc;
+  float n = fbm2(c * 0.07) * 0.75 + noise2(c * 0.35 + 9.0) * 0.25;
+  float gaps = smoothstep(0.6, 0.66, n);
+  // 恐竜の立つ広場の上は、大きく開いている（ふちは、ぎざぎざ）
+  vec2 o = vec2(1.0, 0.0) + SUN.xz * ((CANOPY_Y - 3.0) / SUN.y);
+  float open = 1.0 - smoothstep(5.0, 8.5, length(c - o) + 3.0 * (noise2(c * 0.3) - 0.5));
+  return max(gaps, open);
+}
+// 木の葉ごしの空の明るさ（少し緑がかった灰色）
+vec3 ambientSky(vec3 dir) {
+  return mix(vec3(0.14, 0.18, 0.15), vec3(0.5, 0.58, 0.55), clamp(dir.y * 0.6 + 0.4, 0.0, 1.0)) * 0.8;
+}
+
+// ============================================================
+// ティラノサウルス（単位はメートル。x が頭の向き、y が上、z が右＝カメラ側）
+// ============================================================
+const float DROOP = 0.16;  // 首の付け根から先を下げる
+const float YAW = 0.42;    // 首から先をカメラのほうへ向ける
+const float PITCH = -0.05; // 頭を首に対して少し上げる（ほえるので）
+const float JAW = 0.5;     // 口の開き（ラジアン）
+const vec2 HINGE = vec2(3.55, 3.6);
+const vec3 EYE_C = vec3(3.99, 4.0, 0.282);
+const float EYE_R = 0.056;
+const vec3 EYE_AXIS = vec3(0.6038, 0.1003, 0.7908); // normalize(0.6, 0.1, 0.79)：瞳の向き（ティラノの目は前向き）
+
+// 足（H 腰, K ひざ, A 足首, B 指の付け根）。手前の右足は前に、奥の左足は後ろでかかとを上げる
+const vec3 RH = vec3(0.15, 2.88, 0.55), RK = vec3(0.94, 1.84, 0.62), RA = vec3(0.88, 0.65, 0.6), RB = vec3(1.3, 0.11, 0.58);
+const vec3 LH = vec3(0.15, 2.88, -0.55), LK = vec3(0.11, 1.58, -0.64), LA = vec3(-0.76, 0.76, -0.6), LB = vec3(-0.55, 0.11, -0.56);
+
+// 体の座標へもどす：首を下げる → 首から先をこちらへ → 頭のうなずき、の逆の順
+vec3 bend(vec3 p) {
+  p.xy = vec2(2.2, 3.1) + rot2(p.xy - vec2(2.2, 3.1), DROOP * smoothstep(2.2, 3.3, p.x));
+  float y = YAW * smoothstep(2.3, 3.9, p.x);
+  float c = cos(y), s = sin(y);
+  vec2 q = vec2(p.x - 2.3, p.z);
+  q = vec2(q.x * c + q.y * s, -q.x * s + q.y * c);
+  p.x = q.x + 2.3; p.z = q.y;
+  p.xy = vec2(3.3, 3.8) + rot2(p.xy - vec2(3.3, 3.8), PITCH * smoothstep(3.0, 3.6, p.x));
+  return p;
+}
+vec3 jawSpace(vec3 p) { return vec3(HINGE + rot2(p.xy - HINGE, JAW), p.z); }
+vec3 halfJaw(vec3 p) { return vec3(HINGE + rot2(p.xy - HINGE, 0.5 * JAW), p.z); }
+
+float lipY(float x) { return 3.58 - 0.025 * smoothstep(3.6, 4.3, x) + 0.06 * smoothstep(4.55, 5.15, x); }
+
+// 上の頭の断面：中心の高さ、縦の半径、口の線での横の半径、上のすぼまり
+vec4 upperSec(float x) {
+  x = clamp(x, 3.4, 5.2);
+  float top = x < 3.95 ? mix(4.03, 4.2, smoothstep(3.4, 3.95, x)) : mix(4.2, 3.98, smoothstep(3.95, 5.15, x));
+  float bot = lipY(x) - 0.13;
+  float w = mix(0.45, 0.21, smoothstep(3.75, 4.55, x)) - 0.05 * smoothstep(4.55, 5.15, x);
+  float taper = mix(0.86, 0.62, smoothstep(3.9, 4.6, x));
+  return vec4(0.5 * (top + bot), 0.5 * (top - bot), w, taper);
+}
+float upperW(vec4 s, float y, float lip) { return s.z * mix(1.0, s.w, clamp((y - lip) / (s.x + s.y - lip), 0.0, 1.0)); }
+float upperZ(float x, float y) { vec4 s = upperSec(x); float dy = (y - s.x) / s.y; return upperW(s, y, lipY(x)) * sqrt(max(0.0, 1.0 - dy * dy)); }
+
+vec4 lowerSec(float x) {
+  x = clamp(x, 3.35, 5.15);
+  float top = lipY(x) + 0.1;
+  float bot = mix(3.12, 3.42, smoothstep(3.75, 5.1, x)) + 0.12 * smoothstep(3.7, 3.35, x);
+  float w = mix(0.41, 0.18, smoothstep(3.75, 4.55, x)) - 0.04 * smoothstep(4.55, 5.1, x);
+  return vec4(0.5 * (top + bot), 0.5 * (top - bot), w, 0.6);
+}
+float lowerW(vec4 s, float y, float lip) { float bot = s.x - s.y; return s.z * mix(s.w, 1.0, clamp((y - bot) / (lip - bot), 0.0, 1.0)); }
+float lowerZ(float x, float y) { vec4 s = lowerSec(x); float dy = (y - s.x) / s.y; return lowerW(s, y, lipY(x)) * sqrt(max(0.0, 1.0 - dy * dy)); }
+
+float sdUpperHead(vec3 p) {
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float lip = lipY(q.x);
+  vec4 s = upperSec(q.x);
+  float W = upperW(s, q.y, lip);
+  float d = (length(vec2(q.z / W, (q.y - s.x) / s.y)) - 1.0) * min(W, s.y);
+  d = smax(d, q.x - 5.15, 0.14);
+  d = smax(d, 3.42 - q.x, 0.2);
+  // 目の上に張り出す骨、目の前の小さな角、目の下のほお骨、うしろのあごの筋肉、下まぶた
+  // 目の上の骨と目の前の角を、1本のなめらかな張り出しに（2つに分けると、あいだがくぼんで黒い穴に見えた）
+  d = smin(d, sdEllAxis(q, vec3(3.72, 4.11, 0.215), vec3(4.3, 4.14, 0.15), 0.065, 0.075), 0.07);
+  d = smin(d, sdEllAxis(q, vec3(3.62, 3.76, 0.39), vec3(4.22, 3.8, 0.3), 0.07, 0.06), 0.08);
+  d = smin(d, sdEllipsoid(q, vec3(3.58, 3.93, 0.27), vec3(0.26, 0.26, 0.22)), 0.12);
+  d = smin(d, sdEllipsoid(q, vec3(4.0, 3.94, 0.275), vec3(0.08, 0.022, 0.05)), 0.03);
+  // 目の前の浅いくぼみ、目のあな、鼻のあな
+  d = smax(d, -sdEllipsoid(q, vec3(4.42, 3.84, 0.275), vec3(0.26, 0.09, 0.08)), 0.06);
+  // まぶた：目玉をおおう皮ふ。瞳のまわりだけ開いている（目のまわりは削らない。削ると深い穴に見える）
+  vec3 e = q - EYE_C;
+  float er = length(e);
+  float ang = acos(clamp(dot(e / max(er, 1e-4), EYE_AXIS), -1.0, 1.0));
+  d = smin(d, max(abs(er - EYE_R - 0.006) - 0.007, (0.6 - ang) * er), 0.015);
+  d = smax(d, -sdEllipsoid(q, vec3(5.0, 3.86, 0.12), vec3(0.055, 0.026, 0.035)), 0.015);
+  return smax(d, lip - q.y, 0.03);
+}
+
+float sdLowerJaw(vec3 p) {
+  vec3 q = jawSpace(p); q.z = abs(q.z);
+  float lip = lipY(q.x);
+  vec4 s = lowerSec(q.x);
+  float W = lowerW(s, q.y, lip);
+  float d = (length(vec2(q.z / W, (q.y - s.x) / s.y)) - 1.0) * min(W, s.y);
+  d = smax(d, q.x - 5.08, 0.12);
+  d = smax(d, 3.38 - q.x, 0.18);
+  d = smax(d, q.y - lip, 0.03);
+  // 舌（まん中に浅いみぞ）
+  float tg = sdEllipsoid(q, vec3(3.95, lip - 0.005, 0.0), vec3(0.45, 0.07, 0.17));
+  tg = smax(tg, -sdEllipsoid(q, vec3(4.1, lip + 0.06, 0.0), vec3(0.5, 0.03, 0.025)), 0.02);
+  return smin(d, tg, 0.04);
+}
+
+// 歯：太い根もとから、先が少し後ろ（のどのほう）へ曲がる
+float toothLen(float x) { float u = (x - 4.45) / 0.3; return 0.06 + 0.1 * exp(-u * u); }
+float sdTooth(vec3 q, vec3 root, vec3 dir, float L, float r0) {
+  vec3 mid = root + dir * (0.55 * L) + vec3(0.01, 0.0, 0.0);
+  vec3 tip = root + dir * L - vec3(0.035 + 0.1 * L, 0.0, 0.0);
+  return min(sdRoundCone(q, root, mid, r0, 0.72 * r0), sdRoundCone(q, mid, tip, 0.72 * r0, 0.004));
+}
+float sdTeeth(vec3 p) {
+  float d = 1e3;
+  // 上の歯（頭の座標）
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float fi = floor((q.x - 4.0) / 0.076 + 0.5);
+  for (int k = ZERO - 1; k <= 1; k++) {
+    float x = 4.0 + clamp(fi + float(k), 0.0, 13.0) * 0.076;
+    float L = toothLen(x) * (0.65 + 0.45 * hash11(x * 91.7));
+    float lip = lipY(x);
+    vec3 root = vec3(x, lip + 0.05, upperZ(x, lip) - 0.034);
+    vec3 dir = normalize(vec3(0.03 * (hash11(x * 13.1) - 0.5), -1.0, 0.05 + 0.08 * hash11(x * 7.3)));
+    d = min(d, sdTooth(q, root, dir, L + 0.05, 0.018 + 0.12 * L));
+  }
+  // 下の歯（あごの座標）
+  q = jawSpace(p); q.z = abs(q.z);
+  fi = floor((q.x - 4.05) / 0.08 + 0.5);
+  for (int k = ZERO - 1; k <= 1; k++) {
+    float x = 4.05 + clamp(fi + float(k), 0.0, 11.0) * 0.08;
+    float L = 0.85 * toothLen(x) * (0.65 + 0.45 * hash11(x * 57.3));
+    float lip = lipY(x);
+    vec3 root = vec3(x, lip - 0.05, lowerZ(x, lip) - 0.036);
+    vec3 dir = normalize(vec3(0.03 * (hash11(x * 17.9) - 0.5), 1.0, -0.03));
+    d = min(d, sdTooth(q, root, dir, L + 0.05, 0.016 + 0.11 * L));
+  }
+  return d;
+}
+float sdEye(vec3 p) { return sdSphere(vec3(p.x, p.y, abs(p.z)), EYE_C, EYE_R); }
+
+// しっぽの芯（x, y, z, 太さ）。こちら側へゆるく S 字に曲がる
+const vec4 TAIL[7] = vec4[7](
+  vec4(-0.2, 3.34, 0.0, 0.68), vec4(-1.5, 3.34, 0.05, 0.56), vec4(-2.8, 3.25, 0.2, 0.43), vec4(-4.1, 3.1, 0.45, 0.31),
+  vec4(-5.3, 2.92, 0.75, 0.2), vec4(-6.4, 2.75, 1.05, 0.11), vec4(-7.3, 2.64, 1.3, 0.04));
+
+float sdBody(vec3 p) {
+  float d = sdEllipsoid(p, vec3(0.1, 3.22, 0.0), vec3(1.05, 0.62, 0.62));                 // 腰
+  d = smin(d, sdEllipsoid(p, vec3(1.2, 2.88, 0.0), vec3(1.45, 0.92, 0.82)), 0.4);          // 胴
+  d = smin(d, sdEllipsoid(p, vec3(1.15, 2.36, 0.0), vec3(1.15, 0.52, 0.74)), 0.35);        // おなか
+  d = smin(d, sdEllipsoid(p, vec3(2.15, 2.72, 0.0), vec3(0.78, 0.82, 0.64)), 0.35);       // 胸
+  d = smin(d, sdEllipsoid(p, vec3(0.5, 2.25, 0.0), vec3(0.5, 0.42, 0.46)), 0.3);          // こしの下
+  d = smin(d, sdRoundCone(p, vec3(2.2, 3.0, 0.0), vec3(3.0, 3.42, 0.0), 0.8, 0.63), 0.3); // 首
+  d = smin(d, sdRoundCone(p, vec3(3.0, 3.42, 0.0), vec3(3.55, 3.82, 0.0), 0.63, 0.5), 0.2);
+  d = smin(d, sdEllipsoid(p, vec3(3.15, 3.15, 0.0), vec3(0.6, 0.42, 0.48)), 0.3);       // のど
+  // 筋肉：肩、首の両わき、背中のすじ
+  vec3 a = vec3(p.x, p.y, abs(p.z));
+  d = smin(d, sdEllipsoid(a, vec3(2.25, 2.95, 0.42), vec3(0.45, 0.5, 0.26)), 0.25);
+  d = smin(d, sdEllAxis(a, vec3(2.35, 3.25, 0.32), vec3(3.3, 3.62, 0.28), 0.26, 0.2), 0.2);
+  d = smin(d, sdEllAxis(p, vec3(-1.2, 3.86, 0.0), vec3(2.0, 3.6, 0.0), 0.08, 0.1), 0.25);
+  d = smin(d, sdEllipsoid(p, vec3(-0.8, 2.85, 0.0), vec3(1.1, 0.55, 0.58)), 0.35);        // しっぽの付け根の筋肉
+  if (p.x < 0.6) {
+    float t = 1e3;
+    for (int i = ZERO; i < 6; i++) t = smin(t, sdRoundCone(p, TAIL[i].xyz, TAIL[i + 1].xyz, TAIL[i].w, TAIL[i + 1].w), 0.02);
+    d = smin(d, t, 0.3);
+  }
+  return d;
+}
+
+// 指3本（つめは別）。side は z の向き（+1 手前）
+vec3 toeDir(float ang) { return vec3(cos(ang), 0.0, sin(ang)); }
+float sdToes(vec3 p, vec3 B, float side) {
+  float d = 1e3;
+  for (int i = ZERO; i < 3; i++) {
+    float ang = side * (float(i) - 1.0) * 0.38 + side * 0.12;
+    float len = i == 1 ? 1.0 : 0.8;
+    vec3 dir = toeDir(ang);
+    vec3 m = B + dir * 0.34 * len + vec3(0.0, -0.045, 0.0);
+    vec3 t = m + dir * 0.24 * len + vec3(0.0, -0.02, 0.0);
+    d = smin(d, sdRoundCone(p, B, m, 0.135, 0.1), 0.04);
+    d = smin(d, sdRoundCone(p, m, t, 0.1, 0.068), 0.03);
+  }
+  return d;
+}
+float sdFootClaws(vec3 p, vec3 B, float side) {
+  float d = 1e3;
+  for (int i = ZERO; i < 3; i++) {
+    float ang = side * (float(i) - 1.0) * 0.38 + side * 0.12;
+    float len = i == 1 ? 1.0 : 0.8;
+    vec3 dir = toeDir(ang);
+    vec3 t = B + dir * 0.58 * len + vec3(0.0, -0.065, 0.0);
+    d = min(d, sdRoundCone(p, t - dir * 0.02 + vec3(0.0, 0.01, 0.0), t + dir * 0.15 + vec3(0.0, -0.05, 0.0), 0.055, 0.006));
+  }
+  return d;
+}
+float sdLeg(vec3 p, vec3 H, vec3 K, vec3 A, vec3 B, float side) {
+  float d = sdRoundCone(p, H, K, 0.62, 0.33);
+  d = smin(d, sdEllAxis(p, H + vec3(0.16, 0.2, 0.05 * side), mix(H, K, 0.8) + vec3(0.13, 0.0, 0.04 * side), 0.54, 0.46), 0.16); // 太ももの前の大きな筋肉
+  d = smin(d, sdEllAxis(p, H + vec3(-0.25, 0.05, 0.0), mix(H, K, 0.55) + vec3(-0.2, 0.0, 0.0), 0.36, 0.4), 0.2);              // 太ももの後ろ
+  d = smin(d, sdRoundCone(p, K, A, 0.36, 0.19), 0.15);                                                                         // すね
+  d = smin(d, sdEllAxis(p, mix(K, A, 0.04) + vec3(-0.14, 0.0, 0.0), mix(K, A, 0.6) + vec3(-0.06, 0.0, 0.0), 0.26, 0.24), 0.12); // ふくらはぎ
+  d = smin(d, sdRoundCone(p, A, B, 0.19, 0.14), 0.08);                                                                         // 足の甲
+  return smin(d, sdToes(p, B, side), 0.06);
+}
+
+// 小さな腕（2本指）。ほえるので、少し持ち上げる
+const vec3 SH = vec3(2.38, 2.45, 0.5), EL = vec3(2.55, 2.12, 0.63), WR = vec3(2.85, 2.12, 0.6);
+const vec3 F1 = vec3(3.02, 2.05, 0.64), F2 = vec3(3.0, 2.08, 0.55);
+float sdArm(vec3 p) {
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float d = sdRoundCone(q, SH, EL, 0.13, 0.095);
+  d = smin(d, sdRoundCone(q, EL, WR, 0.09, 0.07), 0.04);
+  d = smin(d, sdRoundCone(q, WR, F1, 0.055, 0.035), 0.03);
+  return smin(d, sdRoundCone(q, WR, F2, 0.05, 0.032), 0.03);
+}
+float sdHandClaws(vec3 p) {
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float a = sdRoundCone(q, F1, F1 + vec3(0.05, -0.08, 0.0), 0.03, 0.004);
+  return min(a, sdRoundCone(q, F2, F2 + vec3(0.045, -0.075, 0.0), 0.028, 0.004));
+}
+
+// 皮ふ（つめ・歯・目をのぞく）
+float skinBase(vec3 pw) {
+  vec3 p = bend(pw);
+  float d = sdBody(p);
+  if (p.x > 3.2) {
+    d = smin(d, sdUpperHead(p), 0.12);
+    d = smin(d, sdLowerJaw(p), 0.08);
+    // 口の角の皮ふ（上下のあごのあいだ）、あごの付け根の筋肉、のびたのどの皮ふ
+    vec3 a = vec3(p.x, p.y, abs(p.z));
+    vec3 hj = halfJaw(p); hj.z = abs(hj.z);
+    d = smin(d, sdEllipsoid(hj, vec3(3.7, lipY(3.7), 0.34), vec3(0.3, 0.17, 0.09)), 0.08);
+    d = smin(d, sdEllipsoid(a, vec3(3.48, 3.6, 0.3), vec3(0.3, 0.3, 0.15)), 0.15);
+    d = smin(d, sdEllipsoid(jawSpace(p), vec3(3.62, 3.28, 0.0), vec3(0.45, 0.26, 0.36)), 0.15);
+  }
+  if (abs(pw.z) < 1.4 && pw.x < 2.3 && pw.x > -1.6) {
+    d = smin(d, sdLeg(pw, RH, RK, RA, RB, 1.0), 0.35);
+    d = smin(d, sdLeg(pw, LH, LK, LA, LB, -1.0), 0.35);
+  }
+  if (pw.x > 2.0 && pw.x < 3.4 && pw.y < 2.9) d = smin(d, sdArm(p), 0.12);
+  return d;
+}
+float hardBase(vec3 pw) {
+  vec3 p = bend(pw);
+  float d = 1e3;
+  if (p.x > 3.8 && p.y > 2.6 && p.y < 4.2) d = min(d, sdTeeth(p));
+  if (p.x > 3.7 && p.y > 3.8) d = min(d, sdEye(p));
+  if (pw.y < 0.35) d = min(d, min(sdFootClaws(pw, RB, 1.0), sdFootClaws(pw, LB, -1.0)));
+  if (pw.x > 2.6 && pw.x < 3.4 && pw.y < 2.3) d = min(d, sdHandClaws(p));
+  return d;
+}
+
+// ---------- 皮ふのこまかい凹凸（ウロコ、こぶ、しわ、筋肉のふくらみ） ----------
+// cav はウロコのすきま（0 がみぞ）、cell はウロコごとの乱数
+float skinDetail(vec3 pw, out float cav, out float cell) {
+  vec3 p = bend(pw);
+  float face = smoothstep(3.35, 3.65, p.x) * smoothstep(2.9, 3.2, p.y);
+  float foot = 1.0 - smoothstep(0.3, 0.8, p.y);
+  float under = smoothstep(2.5, 2.0, p.y) * (1.0 - foot) * smoothstep(-0.5, 0.2, p.x);
+  // 小石のような丸いウロコ。顔と足先は大きめ、おなかは細かい
+  float sc = mix(mix(36.0, 34.0, face), 24.0, foot);
+  sc = mix(sc, 46.0, 0.7 * under);
+  vec3 v = voronoi(p * sc);
+  float groove = smoothstep(0.0, 0.1, v.y - v.x);
+  float dome = groove * (1.0 - 0.6 * v.x * v.x);
+  cav = groove; cell = v.z;
+  float disp = mix(mix(0.0042, 0.0048, face), 0.0055, foot) * dome;
+  // 背中とわき腹に、ところどころ大きなこぶ
+  vec3 v2 = voronoi(p * 9.0 + 3.1);
+  float tm = smoothstep(0.72, 0.93, v2.z) * smoothstep(2.4, 3.3, p.y) * (1.0 - face);
+  disp += 0.01 * smoothstep(0.4, 0.1, v2.x) * tm;
+  cav = min(cav, 1.0 - 0.4 * tm * smoothstep(0.28, 0.4, v2.x) * smoothstep(0.52, 0.4, v2.x));
+  // 顔はでこぼこ。鼻すじには、ごつごつしたこぶが並ぶ
+  if (face > 0.0) {
+    disp += face * 0.009 * (fbm3(p * 8.0) - 0.5);
+    vec4 s = upperSec(p.x);
+    float topMask = smoothstep(-0.12, -0.03, p.y - (s.x + s.y)) * smoothstep(4.05, 4.3, p.x) * (1.0 - smoothstep(4.85, 5.05, p.x));
+    vec3 v3 = voronoi(p * 11.0 + 7.0);
+    disp += topMask * 0.014 * smoothstep(0.45, 0.1, v3.x);
+  }
+  // 首とのどのしわ（首のすじに直角）。首を曲げた内側（カメラ側）は深く
+  float sN = dot(p.xy - vec2(2.3, 3.1), vec2(0.864, 0.504));
+  float neck = smoothstep(0.0, 0.25, sN) * (1.0 - smoothstep(1.15, 1.4, sN)) * (0.55 + 0.45 * smoothstep(-0.3, 0.4, p.z));
+  float throat = smoothstep(3.55, 3.2, p.y) * smoothstep(2.6, 3.0, p.x) * (1.0 - smoothstep(3.9, 4.2, p.x));
+  float fm = max(neck, throat);
+  if (fm > 0.0) {
+    float w = sin(sN * 38.0 + 6.0 * fbm3(p * 1.2) + 2.0 * noise3(p * 6.0) + p.y * 3.0);
+    float broken = smoothstep(0.3, 0.6, noise3(p * 3.0 + 11.0));
+    disp -= fm * (0.02 * pow(1.0 - abs(w), 8.0) * broken - 0.005 * abs(w));
+  }
+  // おなかの、たてに走るしわ
+  if (under > 0.0) {
+    float w = sin(p.y * 30.0 + 5.0 * fbm3(p * 1.1) + 2.0 * noise3(p * 5.0));
+    disp -= under * 0.01 * pow(1.0 - abs(w), 6.0) * smoothstep(0.3, 0.6, noise3(p * 2.5 + 5.0));
+  }
+  // ひざと足首のしわ
+  float kn = max(1.0 - smoothstep(0.0, 0.38, length(pw - RK)), 1.0 - smoothstep(0.0, 0.38, length(pw - LK)));
+  float an = max(1.0 - smoothstep(0.0, 0.25, length(pw - RA)), 1.0 - smoothstep(0.0, 0.25, length(pw - LA)));
+  float jm = max(kn, an);
+  if (jm > 0.0) disp -= jm * 0.012 * pow(1.0 - abs(sin(pw.y * 24.0 + 3.0 * noise3(pw * 4.0))), 5.0);
+  // 筋肉や脂肪のゆるいふくらみ
+  disp += 0.013 * (fbm3(p * 1.6) - 0.5);
+  return disp;
+}
+
+// ============================================================
+// 森
+// ============================================================
+// 地面：ゆるい起伏。足のまわりは平らにして少しへこませる
+float groundH(vec2 xz, bool detail) {
+  float h = 0.3 * (fbm2(xz * 0.1 + 3.0) - 0.5);
+  float near = min(length(xz - vec2(1.6, 0.6)), length(xz - vec2(-0.3, -0.58)));
+  h *= smoothstep(0.5, 2.5, near);
+  h -= 0.025 * (1.0 - smoothstep(0.35, 0.75, near));
+  if (detail) {
+    h += 0.025 * (fbm2(xz * 2.7) - 0.5);
+    vec3 v = voronoi2(xz * 4.0);
+    h += 0.025 * smoothstep(0.3, 0.05, v.x) * step(0.93, v.z);
+  }
+  return h;
+}
+
+// 木：7 m ごとのます目に1本ずつ（広場とカメラの前はあける）。info は木の中心と太さ
+const float CELL = 7.0;
+float treeRadius(vec2 c, float y) {
+  float r = 0.25 + 1.0 * pow(hash12(c + 7.7), 1.5);
+  return r * (1.0 + 0.7 * exp(-max(y, 0.0) * 1.3)) * (1.0 - 0.006 * clamp(y, 0.0, 40.0));
+}
+bool clearing(vec2 c) {
+  vec2 d = (c - vec2(0.5, -1.0)) / vec2(10.0, 7.5);
+  if (dot(d, d) < 1.0) return true;
+  vec2 a = vec2(8.2, 6.0), b = vec2(1.0, 0.0);
+  vec2 pa = c - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  if (length(pa - ba * h) < 3.5) return true;
+  // カメラのうしろ
+  return dot(c - a, normalize(a - b)) > -1.0;
+}
+float sdTrees(vec3 p, out vec3 info) {
+  vec2 cell = floor(p.xz / CELL);
+  float d = 1e3; info = vec3(0.0, 0.0, 1.0);
+  for (int j = ZERO - 1; j <= 1; j++)
+  for (int i = ZERO - 1; i <= 1; i++) {
+    vec2 c = cell + vec2(float(i), float(j));
+    vec2 pos = (c + 0.15 + 0.7 * hash22(c * 1.7 + 0.3)) * CELL;
+    if (clearing(pos)) continue;
+    float r = treeRadius(c, p.y);
+    float dd = length(p.xz - pos) - r;
+    if (dd < d) { d = dd; info = vec3(pos, r); }
+  }
+  // 木の皮のたてのすじ
+  if (d < 0.2) {
+    vec2 q = p.xz - info.xy;
+    float ang = atan(q.y, q.x);
+    float f = noise2(vec2(ang * info.z * 5.0, p.y * 0.45));
+    d -= 0.04 * (1.0 - abs(2.0 * f - 1.0));
+  }
+  return min(d, 4.0);
+}
+
+// シダ（x, z, 大きさ, 種）
+const vec4 FERNS[10] = vec4[10](
+  vec4(3.9, 4.4, 0.9, 0.13), vec4(5.6, 3.6, 0.7, 0.41), vec4(6.4, 1.6, 0.8, 0.77), vec4(-2.8, -4.5, 1.1, 0.29), vec4(2.6, -5.2, 1.2, 0.55),
+  vec4(-6.5, 1.5, 1.0, 0.91), vec4(-3.5, 3.2, 0.9, 0.37), vec4(5.0, -2.8, 1.0, 0.63), vec4(8.5, -1.0, 1.1, 0.05), vec4(-9.0, -3.0, 1.3, 0.71));
+// シダの葉の1区間：うすい帯で、ふちがぎざぎざ（小さな葉が並ぶ）
+float sdFrondSeg(vec3 q, vec3 A, vec3 B, float t0, float t1, vec3 side) {
+  vec3 u = B - A; float L = length(u); u /= L;
+  vec3 n = normalize(cross(u, side));
+  vec3 r = q - A;
+  float along = dot(r, u);
+  float h = clamp(along / L, 0.0, 1.0);
+  float t = mix(t0, t1, h);
+  float w = 0.17 * pow(sin(3.1416 * t), 0.7) * (0.6 + 0.4 * abs(sin(t * 42.0)));
+  vec3 e = r - u * (h * L);
+  float dBlade = max(abs(dot(e, n)) - 0.006, abs(dot(e, side)) - w);
+  return max(dBlade, max(-along, along - L)) * 0.7;
+}
+float sdFern(vec3 p, vec4 f) {
+  vec3 q = (p - vec3(f.x, groundH(f.xy, false), f.y)) / f.z;
+  float d = 1e3;
+  for (int i = ZERO; i < 9; i++) {
+    float a = f.w * 6.28 + float(i) * 2.3998;
+    vec3 dir = vec3(cos(a), 0.0, sin(a));
+    vec3 side = vec3(-dir.z, 0.0, dir.x);
+    float len = 0.8 + 0.4 * hash11(f.w * 13.0 + float(i));
+    float lift = 0.45 + 0.25 * hash11(f.w * 31.0 + float(i));
+    // 根もと → 持ち上がって → 先はたれる（3区間）
+    vec3 P0 = vec3(0.0);
+    for (int k = ZERO; k < 3; k++) {
+      float t1 = k == 0 ? 0.33 : (k == 1 ? 0.7 : 1.0);
+      float l1 = k == 0 ? 0.35 : (k == 1 ? 0.75 : 1.05);
+      float h1 = k == 0 ? 0.9 : (k == 1 ? 1.05 : 0.6);
+      vec3 P1 = dir * l1 * len + vec3(0.0, lift * h1, 0.0);
+      d = min(d, sdFrondSeg(q, P0, P1, k == 0 ? 0.0 : (k == 1 ? 0.33 : 0.7), t1, side));
+      P0 = P1;
+    }
+  }
+  return d * f.z;
+}
+// 奥のしげみ（x, z, 大きさ）と、こけむした岩（x, z, 大きさ）
+const vec3 SHRUBS[4] = vec3[4](vec3(-5.0, -10.0, 2.0), vec3(6.0, -12.0, 2.5), vec3(-12.0, -6.0, 2.2), vec3(14.0, -6.0, 2.0));
+const vec3 ROCKS[2] = vec3[2](vec3(-1.8, 2.6, 0.45), vec3(3.2, -2.0, 0.6));
+
+// mat: 1 皮ふ, 2 目, 3 歯, 4 つめ, 5 地面, 6 しげみ, 7 岩, 8 木, 9 シダ
+float sdForest(vec3 p, out int mat) {
+  float d = (p.y - groundH(p.xz, length(p.xz - vec2(1.0, 0.0)) < 30.0)) * 0.8;
+  mat = 5;
+  vec3 info;
+  float t = sdTrees(p, info);
+  if (t < d) { d = t; mat = 8; }
+  if (p.y < 1.6) {
+    for (int i = ZERO; i < 10; i++) {
+      vec4 f = FERNS[i];
+      float b = length(p - vec3(f.x, 0.45 * f.z, f.y)) - 1.25 * f.z;
+      if (b > d) continue;
+      float e = b > 0.2 ? b : sdFern(p, f);
+      if (e < d) { d = e; mat = 9; }
+    }
+  }
+  if (p.z < -3.0) {
+    for (int i = ZERO; i < 4; i++) {
+      vec3 s = SHRUBS[i];
+      vec3 q = p - vec3(s.x, 0.0, s.y);
+      float b = length(q - vec3(0.0, 0.4 * s.z, 0.0)) - 1.5 * s.z;
+      if (b > d) continue;
+      float e = b > 0.5 ? b : (sdEllipsoid(q, vec3(0.0, 0.25 * s.z, 0.0), vec3(1.2 * s.z, 0.6 * s.z, s.z)) + (fbm3(p * 1.3 + float(i) * 7.0) - 0.5) * 0.7 * s.z) * 0.55;
+      if (e < d) { d = e; mat = 6; }
+    }
+  }
+  for (int i = ZERO; i < 2; i++) {
+    vec3 s = ROCKS[i];
+    vec3 q = p - vec3(s.x, 0.0, s.y);
+    float b = length(q) - 1.6 * s.z;
+    if (b > d) continue;
+    float e = b > 0.3 ? b : (sdEllipsoid(q, vec3(0.0, 0.15 * s.z, 0.0), vec3(1.2 * s.z, 0.75 * s.z, s.z)) + (fbm3(p * 3.0 / s.z) - 0.5) * 0.12 * s.z) * 0.7;
+    if (e < d) { d = e; mat = 7; }
+  }
+  return d;
+}
+
+// ============================================================
+// シーン
+// ============================================================
+const vec3 BMIN = vec3(-7.8, -0.1, -1.6), BMAX = vec3(5.6, 4.6, 2.6);
+float boxDist(vec3 p) {
+  vec3 b = max(BMIN - p, p - BMAX);
+  return length(max(b, 0.0)) + min(max(b.x, max(b.y, b.z)), 0.0);
+}
+// 影と照り返し用の軽い森（地面・木・岩だけ）
+float sdForestLite(vec3 p) {
+  float d = p.y - groundH(p.xz, false) + 0.02;
+  vec2 cell = floor(p.xz / CELL);
+  for (int j = ZERO - 1; j <= 1; j++)
+  for (int i = ZERO - 1; i <= 1; i++) {
+    vec2 c = cell + vec2(float(i), float(j));
+    vec2 pos = (c + 0.15 + 0.7 * hash22(c * 1.7 + 0.3)) * CELL;
+    if (clearing(pos)) continue;
+    float r = treeRadius(c, p.y);
+    d = min(d, length(p.xz - pos) - r);
+  }
+  d = min(d, 4.0);
+  for (int i = ZERO; i < 2; i++) {
+    vec3 s = ROCKS[i];
+    d = min(d, sdEllipsoid(p - vec3(s.x, 0.0, s.y), vec3(0.0, 0.15 * s.z, 0.0), vec3(1.2 * s.z, 0.75 * s.z, s.z)));
+  }
+  return d;
+}
+float mapBase(vec3 p) {
+  float d = sdForestLite(p);
+  float box = boxDist(p);
+  if (box > 0.3) return min(d, box);
+  return min(d, min(skinBase(p), hardBase(p)));
+}
+float map(vec3 p, out int mat) {
+  float g = sdForest(p, mat);
+  float box = boxDist(p);
+  if (box > 0.3) return min(g, box);
+  float s = skinBase(p);
+  if (s < 0.06) { float cav, cell; s -= skinDetail(p, cav, cell); s *= 0.85; }
+  float h = hardBase(p);
+  float d = g;
+  if (s < d) { d = s; mat = 1; }
+  if (h < d) {
+    d = h;
+    vec3 q = bend(p);
+    mat = sdEye(q) < h + 1e-3 ? 2 : (p.y < 0.4 || (p.x < 3.4 && p.y < 2.4) ? 4 : 3);
+  }
+  return d;
+}
+float mapD(vec3 p) { int m; return map(p, m); }
+
+vec3 calcNormal(vec3 p, float eps) {
+  vec3 n = vec3(0.0);
+  for (int i = ZERO; i < 4; i++) {
+    vec3 e = 0.5773 * (2.0 * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.0);
+    n += e * mapD(p + e * eps);
+  }
+  return normalize(n);
+}
+
+bool march(vec3 ro, vec3 rd, float tmax, out float t, out int mat) {
+  t = 0.05;
+  for (int i = ZERO; i < 420; i++) {
+    vec3 p = ro + rd * t;
+    float d = map(p, mat);
+    if (abs(d) < 0.0004 * t + 0.0002) return true;
+    t += d * 0.9;
+    if (t > tmax) break;
+  }
+  return false;
+}
+float shadowRay(vec3 ro, vec3 rd) {
+  float t = 0.01;
+  for (int i = ZERO; i < 160; i++) {
+    float d = mapBase(ro + rd * t);
+    if (d < 0.0008) return 0.0;
+    t += max(d * 0.95, 0.005);
+    if (t > 24.0) break;
+  }
+  return 1.0;
+}
+float occRay(vec3 ro, vec3 rd, float tmax) {
+  float t = 0.01;
+  for (int i = ZERO; i < 90; i++) {
+    float d = mapBase(ro + rd * t);
+    if (d < 0.002) return t;
+    t += max(d, 0.01);
+    if (t > tmax) break;
+  }
+  return -1.0;
+}
+
+// ---------- 霧（木もれ日のすじつき） ----------
+const float FOG_D = 0.02;
+const float FOG_H = 8.0;
+const vec3 FOG_AMB = vec3(0.3, 0.35, 0.32);
+float fogDensity(vec3 x) {
+  // 広場の中は少しうすく
+  float clear = smoothstep(6.0, 20.0, length(x.xz - vec2(1.0, 0.0)));
+  return FOG_D * exp(-max(x.y, 0.0) / FOG_H) * (0.35 + 0.65 * clear);
+}
+// 目からの光のうち、霧で残る割合（trans）と、霧が足す明るさ
+vec3 fogScatter(vec3 ro, vec3 rd, float tEnd, out float trans) {
+  const int N = 14;
+  float tmax = min(tEnd, 110.0);
+  float cosT = dot(rd, SUN);
+  float g = 0.6;
+  float hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5);
+  float phase = 0.45 + 0.55 * hg;
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  float j = rnd();
+  for (int i = ZERO; i < N; i++) {
+    float f0 = float(i) / float(N), f1 = float(i + 1) / float(N);
+    float f = (float(i) + j) / float(N);
+    float dt = tmax * (f1 * f1 - f0 * f0);
+    vec3 x = ro + rd * (tmax * f * f);
+    float att = exp(-fogDensity(x) * dt);
+    vec3 Ls = FOG_AMB + SUN_C * 0.28 * phase * canopyLight(x);
+    acc += T * (1.0 - att) * Ls;
+    T *= att;
+  }
+  trans = T;
+  return acc;
+}
+
+// 何にも当たらなかったとき：木の葉の天井（すきまは明るい）
+vec3 farScene(vec3 ro, vec3 rd, out float tEnd) {
+  tEnd = 110.0;
+  if (rd.y > 0.02) {
+    float tc = (CANOPY_Y - ro.y) / rd.y;
+    if (tc < 110.0) {
+      tEnd = tc;
+      vec2 c = (ro + rd * tc).xz;
+      float n = fbm2(c * 0.07) * 0.75 + noise2(c * 0.35 + 9.0) * 0.25;
+      float gap = smoothstep(0.55, 0.7, n);
+      return mix(vec3(0.03, 0.045, 0.03), vec3(1.05, 1.1, 1.0), gap);
+    }
+  }
+  return FOG_AMB * 1.2;
+}
+
+// ---------- 色 ----------
+vec3 skinAlbedo(vec3 pw, vec3 n, float cav, float cell, out float rough) {
+  vec3 p = bend(pw);
+  float face = smoothstep(3.35, 3.65, p.x) * smoothstep(2.9, 3.2, p.y);
+  float foot = 1.0 - smoothstep(0.4, 1.2, p.y);
+  float up = n.y + 0.3 * (fbm3(p * 0.9) - 0.5);
+  vec3 dorsal = vec3(0.022, 0.02, 0.018);
+  vec3 flank = vec3(0.062, 0.051, 0.04);
+  vec3 belly = vec3(0.25, 0.21, 0.16);
+  vec3 c = mix(flank, dorsal, smoothstep(0.05, 0.7, up));
+  float under = smoothstep(-0.1, -0.6, up) * (1.0 - foot);
+  float throat = smoothstep(3.6, 3.25, p.y) * smoothstep(2.5, 3.0, p.x) * (1.0 - smoothstep(4.6, 5.0, p.x)) * smoothstep(0.2, -0.4, n.y);
+  c = mix(c, belly, max(under, 0.8 * throat));
+  // ところどころ、くすんだ緑っぽさ
+  c *= mix(vec3(1.0), vec3(0.88, 1.0, 0.8), smoothstep(0.45, 0.7, fbm3(p * 0.6 + 5.0)));
+  // 背中としっぽの暗いしま
+  float st = sin(p.x * 6.5 + 4.0 * fbm3(p * vec3(0.6, 1.3, 1.3))) * (0.5 + noise3(p * 0.9));
+  float stripe = smoothstep(0.1, 0.75, st) * smoothstep(-0.3, 0.35, up) * (1.0 - 0.8 * face) * (1.0 - foot);
+  c *= mix(1.0, 0.5, stripe);
+  c *= 0.75 + 0.5 * fbm3(p * 3.3);
+  // 顔：目のまわりと鼻すじは赤茶色、頭のてっぺんは暗く、口のふちは明るい
+  if (face > 0.0) {
+    vec3 q = vec3(p.x, p.y, abs(p.z));
+    vec3 fc = mix(vec3(0.06, 0.05, 0.04), vec3(0.03, 0.026, 0.022), smoothstep(-0.1, 0.7, n.y));
+    float eyeZone = 1.0 - smoothstep(0.05, 0.22, length((q - EYE_C) * vec3(0.8, 1.2, 1.0)));
+    fc = mix(fc, vec3(0.1, 0.055, 0.042), 0.3 * eyeZone);
+    vec4 s = upperSec(p.x);
+    float snoutTop = smoothstep(-0.14, -0.04, p.y - (s.x + s.y)) * smoothstep(4.0, 4.4, p.x);
+    fc = mix(fc, vec3(0.075, 0.045, 0.035), 0.4 * snoutTop);
+    float lipU = 1.0 - smoothstep(0.0, 0.06, abs(p.y - lipY(p.x)));
+    vec3 jq = jawSpace(p);
+    float lipL = 1.0 - smoothstep(0.0, 0.05, abs(jq.y - lipY(jq.x)));
+    fc = mix(fc, vec3(0.15, 0.13, 0.11), 0.5 * max(lipU, lipL) * smoothstep(3.75, 4.0, p.x));
+    fc *= 0.8 + 0.4 * fbm3(p * 6.0);
+    c = mix(c, fc, face * (1.0 - 0.6 * max(under, throat)));
+  }
+  c = mix(c, vec3(0.075, 0.068, 0.058), foot * 0.75);
+  c *= 0.88 + 0.24 * cell;
+  c *= mix(mix(0.66, 0.8, face), 1.0, cav);
+  rough = mix(0.75, 0.45, cav);
+  // 口の中（歯の列より内側）：上あごはひだのある天井、下は歯ぐきと舌、奥ほど暗い
+  vec3 jq = jawSpace(p);
+  float lipU = lipY(p.x), lipL = lipY(jq.x);
+  bool onUpper = abs(p.y - lipU) < abs(jq.y - lipL);
+  bool within = onUpper ? abs(p.z) < upperZ(p.x, lipU) - 0.045 : abs(jq.z) < lowerZ(jq.x, lipL) - 0.05;
+  bool inside = p.x > 3.45 && p.x < 5.1 && p.y < lipU + 0.01 && jq.y > lipL - 0.01 && within;
+  if (inside) {
+    float tongue = onUpper ? 0.0 : step(abs(jq.z), 0.17) * step(jq.y, lipL + 0.08);
+    vec3 palate = vec3(0.17, 0.05, 0.045) * (0.8 + 0.35 * abs(sin(p.x * 60.0)));
+    c = onUpper ? palate : mix(vec3(0.09, 0.04, 0.034), vec3(0.17, 0.065, 0.055), tongue);
+    c *= (0.8 + 0.3 * fbm3(p * 12.0)) * mix(0.3, 1.0, smoothstep(3.55, 4.1, p.x)) * mix(1.0, 0.55, smoothstep(4.55, 4.95, jq.x) * (1.0 - float(onUpper)));
+    rough = 0.28;
+  }
+  return c;
+}
+
+vec3 lighting(vec3 p, vec3 n, vec3 rd, vec3 alb, float rough, float f0, float sss, float leaf, float occScale) {
+  // 太陽：木もれ日の中だけ。太陽の大きさの中から方向を選ぶので、影のふちがやわらかい
+  vec3 jit = normalize(SUN + 0.01 * (vec3(rnd(), rnd(), rnd()) - 0.5));
+  float ndl = dot(n, jit);
+  float can = canopyLight(p);
+  float sh = 0.0;
+  if (can > 0.01 && (ndl > -0.3 || leaf > 0.0)) sh = can * shadowRay(p + n * 0.006 * sign(ndl + 1e-4), jit);
+  float dif = sss > 0.0 ? clamp((ndl + 0.3 * sss) / (1.0 + 0.3 * sss), 0.0, 1.0) : max(ndl, 0.0);
+  float edge = sss * smoothstep(-0.3, 0.0, ndl) * (1.0 - smoothstep(0.0, 0.45, ndl));
+  vec3 col = alb * SUN_C * dif * sh * mix(vec3(1.0), vec3(1.12, 0.9, 0.82), edge);
+  // 葉は、うしろから光がすける
+  col += alb * SUN_C * leaf * max(-ndl, 0.0) * sh * vec3(1.1, 1.3, 0.6);
+  // 空（木の葉ごし）の光と、まわりからの照り返し：半球からランダムに1本
+  float r1 = rnd(), r2 = rnd();
+  vec3 up = abs(n.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+  vec3 tx = normalize(cross(up, n)); vec3 ty = cross(n, tx);
+  float sr = sqrt(r1); float ph = 6.2831853 * r2;
+  vec3 dir = normalize(tx * sr * cos(ph) + ty * sr * sin(ph) + n * sqrt(max(0.0, 1.0 - r1)));
+  float hit = occRay(p + n * 0.006, dir, 6.0 * occScale);
+  if (hit < 0.0) {
+    col += alb * ambientSky(dir);
+  } else {
+    vec3 hp = p + n * 0.006 + dir * hit;
+    float isGround = step(hp.y, 0.15);
+    vec3 halb = mix(vec3(0.05, 0.045, 0.038), vec3(0.11, 0.085, 0.06), isGround);
+    float hl = isGround > 0.5 ? SUN.y * 0.8 * canopyLight(hp) : 0.15;
+    col += alb * halb * (SUN_C * hl + vec3(0.25, 0.3, 0.27));
+  }
+  // つや（GGX）
+  vec3 v = -rd; vec3 h = normalize(jit + v);
+  float nh = max(dot(n, h), 0.0), nv = max(dot(n, v), 1e-3), nl = max(ndl, 0.0);
+  float a = rough * rough; float a2 = a * a;
+  float dd = nh * nh * (a2 - 1.0) + 1.0;
+  float D = a2 / (3.14159 * dd * dd);
+  float kk = a * 0.5;
+  float G = nl / (nl * (1.0 - kk) + kk) * nv / (nv * (1.0 - kk) + kk);
+  float F = f0 + (1.0 - f0) * pow(1.0 - max(dot(h, v), 0.0), 5.0);
+  col += SUN_C * sh * D * G * F / (4.0 * nv);
+  float Fv = f0 + (1.0 - f0) * pow(1.0 - nv, 5.0);
+  col += ambientSky(reflect(rd, n)) * Fv * (1.0 - rough) * (hit < 0.0 ? 1.0 : 0.3) * 0.8;
+  return col;
+}
+
+vec3 render(vec3 ro, vec3 rd) {
+  float t; int mat;
+  vec3 col;
+  float tEnd;
+  if (!march(ro, rd, 75.0, t, mat)) {
+    col = farScene(ro, rd, tEnd);
+  } else {
+    tEnd = t;
+    vec3 p = ro + rd * t;
+    vec3 n = calcNormal(p, 0.0004 + 0.00025 * t);
+    vec3 alb; float rough, f0, sss, leaf = 0.0, occScale = 1.0;
+    if (mat == 1) {
+      float cav, cell;
+      skinDetail(p, cav, cell);
+      alb = skinAlbedo(p, n, cav, cell, rough);
+      f0 = 0.03; sss = 1.0;
+    } else if (mat == 2) {
+      // 目：黄色みのある虹彩と丸い瞳、ぬれた表面
+      vec3 q = bend(p); q.z = abs(q.z);
+      vec3 e = normalize(q - EYE_C);
+      float ang = acos(clamp(dot(e, EYE_AXIS), -1.0, 1.0));
+      vec3 iris = vec3(0.5, 0.36, 0.08) * (0.6 + 0.8 * noise3(e * 30.0));
+      iris = mix(iris, vec3(0.07, 0.035, 0.012), smoothstep(0.4, 0.56, ang));
+      alb = mix(vec3(0.004), iris, smoothstep(0.19, 0.23, ang));
+      // 虹彩の外は、まぶたの皮ふ（ふちは暗い線）。目玉の白いところは見せない
+      float lid = smoothstep(0.62, 0.68, ang);
+      alb = mix(alb, vec3(0.012, 0.009, 0.007), smoothstep(0.55, 0.6, ang) * (1.0 - lid));
+      alb = mix(alb, vec3(0.055, 0.045, 0.036) * (0.8 + 0.4 * noise3(q * 90.0)), lid);
+      rough = mix(0.05, 0.65, lid); f0 = mix(0.04, 0.03, lid); sss = lid; occScale = 0.5;
+    } else if (mat == 3) {
+      vec3 q = bend(p);
+      float gum = 1.0 - smoothstep(0.0, 0.06, min(abs(q.y - lipY(q.x)), abs(jawSpace(q).y - lipY(jawSpace(q).x))));
+      alb = mix(vec3(0.54, 0.46, 0.32), vec3(0.26, 0.15, 0.11), gum) * (0.8 + 0.35 * noise3(q * 40.0));
+      rough = 0.3; f0 = 0.045; sss = 0.3; occScale = 0.5;
+    } else if (mat == 4) {
+      alb = vec3(0.045, 0.04, 0.035);
+      rough = 0.3; f0 = 0.04; sss = 0.0; occScale = 0.5;
+    } else if (mat == 6) {
+      alb = mix(vec3(0.025, 0.04, 0.016), vec3(0.06, 0.075, 0.025), noise3(p * 6.0)) * (0.7 + 0.6 * noise3(p * 23.0));
+      rough = 0.8; f0 = 0.03; sss = 0.6; leaf = 0.5; occScale = 3.0;
+    } else if (mat == 7) {
+      float moss = smoothstep(0.2, 0.7, n.y + 0.3 * (fbm3(p * 3.0) - 0.5));
+      alb = mix(vec3(0.14, 0.13, 0.115) * (0.6 + 0.6 * fbm3(p * 9.0)), vec3(0.05, 0.08, 0.022) * (0.7 + 0.6 * noise3(p * 20.0)), moss);
+      rough = 0.85; f0 = 0.03; sss = 0.0;
+    } else if (mat == 8) {
+      vec3 info; sdTrees(p, info);
+      vec2 q = p.xz - info.xy;
+      float ang = atan(q.y, q.x);
+      float streak = noise2(vec2(ang * info.z * 5.0, p.y * 0.45));
+      alb = mix(vec3(0.06, 0.043, 0.035), vec3(0.15, 0.1, 0.075), streak) * (0.75 + 0.5 * noise3(p * vec3(8.0, 1.5, 8.0)));
+      float moss = smoothstep(1.6, 0.2, p.y + 0.6 * (fbm3(p * 1.5) - 0.5)) * (0.5 + 0.5 * n.y + 0.5 * smoothstep(0.0, 1.0, -n.x));
+      alb = mix(alb, vec3(0.045, 0.075, 0.02), clamp(moss, 0.0, 1.0));
+      rough = 0.9; f0 = 0.02; sss = 0.0; occScale = 2.0;
+    } else if (mat == 9) {
+      alb = mix(vec3(0.035, 0.06, 0.02), vec3(0.075, 0.085, 0.03), noise3(p * 4.0)) * (0.75 + 0.5 * noise3(p * 30.0));
+      rough = 0.55; f0 = 0.04; sss = 0.5; leaf = 0.6; occScale = 0.6;
+    } else {
+      // 森の地面：黒っぽい土、落ちた針葉、こけ、小石
+      vec3 v = voronoi2(p.xz * 4.0);
+      alb = vec3(0.06, 0.045, 0.032) * (0.7 + 0.6 * fbm2(p.xz * 0.9));
+      float needles = smoothstep(0.55, 0.8, noise2(p.xz * 22.0) * 0.6 + noise2(p.xz * 3.0) * 0.4);
+      alb = mix(alb, vec3(0.1, 0.065, 0.04), needles * 0.6);
+      float moss = smoothstep(0.55, 0.7, fbm2(p.xz * 0.45 + 2.0)) * smoothstep(1.5, 3.5, length(p.xz - vec2(1.0, 0.0)));
+      alb = mix(alb, vec3(0.045, 0.075, 0.02) * (0.7 + 0.6 * noise2(p.xz * 30.0)), moss);
+      alb = mix(alb, vec3(0.07, 0.065, 0.058) * (0.7 + 0.6 * v.z), smoothstep(0.3, 0.06, v.x) * step(0.93, v.z));
+      rough = 0.9; f0 = 0.02; sss = 0.0;
+    }
+    col = lighting(p, n, rd, alb, rough, f0, sss, leaf, occScale);
+    // 目には、空の明るいところが小さく映る
+    if (mat == 2) {
+      vec3 q = bend(p); q.z = abs(q.z);
+      float onIris = 1.0 - smoothstep(0.55, 0.6, acos(clamp(dot(normalize(q - EYE_C), EYE_AXIS), -1.0, 1.0)));
+      col += onIris * vec3(1.4, 1.45, 1.35) * pow(max(dot(reflect(rd, n), normalize(vec3(0.2, 0.9, 0.4))), 0.0), 120.0);
+    }
+  }
+  float trans;
+  vec3 fog = fogScatter(ro, rd, tEnd, trans);
+  return col * trans + fog;
+}
+
+void main() {
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec4 prev = texelFetch(uAccum, ip, 0);
+  seed = uint(ip.x) * 1973u + uint(ip.y) * 9277u + uint(uSample) * 26699u + 1u;
+  seed = pcg(seed);
+  vec2 uv = (gl_FragCoord.xy + vec2(rnd(), rnd()) - 0.5 * uRes) / uRes.y;
+  vec3 ww = normalize(uCamTarget - uCamPos);
+  vec3 uu = normalize(cross(ww, vec3(0, 1, 0)));
+  vec3 vv = cross(uu, ww);
+  float fl = 0.5 / tan(0.5 * uFov);
+  vec3 rd = normalize(uv.x * uu + uv.y * vv + fl * ww);
+  // 被写界深度（レンズの上の点をランダムに）
+  vec3 fp = uCamPos + rd * (uFocus / dot(rd, ww));
+  float lr = sqrt(rnd()) * uAperture; float la = 6.2831853 * rnd();
+  vec3 ro = uCamPos + uu * lr * cos(la) + vv * lr * sin(la);
+  rd = normalize(fp - ro);
+  vec3 col = render(ro, rd);
+  col = clamp(col, 0.0, 30.0);
+  fragColor = prev + vec4(col, 1.0);
+}
+</script>
+<script id="display" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+uniform sampler2D uAccum;
+uniform vec2 uRes;
+uniform float uExposure;
+out vec4 fragColor;
+vec3 aces(vec3 x) { const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14; return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); }
+float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+void main() {
+  vec4 a = texelFetch(uAccum, ivec2(gl_FragCoord.xy), 0);
+  vec3 c = a.a > 0.0 ? a.rgb / a.a : vec3(0.0);
+  c *= uExposure;
+  // 色の調子：暗いところは少し青緑に、明るいところは少しあたたかく
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = mix(c, c * vec3(0.9, 1.0, 1.06), 1.0 - smoothstep(0.0, 0.5, l));
+  c = aces(c);
+  vec2 uv = gl_FragCoord.xy / uRes;
+  c *= 1.0 - 0.32 * pow(length((uv - 0.5) * vec2(1.0, 0.8)) * 1.25, 2.4);
+  c = pow(c, vec3(1.0 / 2.2));
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
+  c += (h12(gl_FragCoord.xy) - 0.5) * 0.018;
+  fragColor = vec4(c, 1.0);
+}
+</script>
+<script type="module">
+const params = new URLSearchParams(location.search);
+const W = +(params.get("w") ?? 960), H = +(params.get("h") ?? 540);
+const SPP = +(params.get("spp") ?? 8);
+const NAME = params.get("name") ?? "realistic-trex-v2";
+const SAVE = params.get("save") === "1";
+const num = (k, d) => (params.get(k) ? params.get(k).split(",").map(Number) : d);
+const cam = {
+  pos: num("pos", [8.2, 1.35, 6.0]),
+  target: num("target", [1.9, 2.35, 0.4]),
+  fov: (num("fov", [40])[0] * Math.PI) / 180,
+  focus: num("focus", [7.1])[0],
+  aperture: num("aperture", [0.05])[0],
+  exposure: num("exposure", [1.0])[0],
+};
+
+const status = document.getElementById("status");
+const canvas = document.getElementById("c");
+canvas.width = W;
+canvas.height = H;
+const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true, antialias: false });
+if (!gl) throw (status.textContent = "WebGL2 が使えません");
+if (!gl.getExtension("EXT_color_buffer_float")) throw (status.textContent = "EXT_color_buffer_float が使えません");
+
+const vsSrc = `#version 300 es
+void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
+// シェーダーは裏で準備させて、待っているあいだもページが固まらないようにする
+const parallel = gl.getExtension("KHR_parallel_shader_compile");
+function startProgram(fsId) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vsSrc], [gl.FRAGMENT_SHADER, document.getElementById(fsId).textContent]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  return p;
+}
+async function ready(p) {
+  const t = performance.now();
+  if (parallel) {
+    while (!gl.getProgramParameter(p, parallel.COMPLETION_STATUS_KHR)) {
+      status.textContent = `シェーダーを準備中… ${((performance.now() - t) / 1000).toFixed(0)} 秒`;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    const log = gl.getAttachedShaders(p).map((s) => gl.getShaderInfoLog(s)).join("\n") + gl.getProgramInfoLog(p);
+    status.textContent = "シェーダーのエラー: " + log;
+    console.error(log);
+    throw new Error(log);
+  }
+  console.log(`shader ready in ${((performance.now() - t) / 1000).toFixed(1)} s`);
+  return p;
+}
+const display = await ready(startProgram("display"));
+const trace = await ready(startProgram("trace"));
+const U = (p, n) => gl.getUniformLocation(p, n);
+
+function target() {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, W, H);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fb };
+}
+const A = target(); // たまった結果
+const B = target(); // 1回分を足したもの（タイルごとに A へ写す）
+
+// 画面をタイルに分けて、少しずつ描く（GPU が長く止まらないように）
+let tile = 64;
+const tiles = () => {
+  const list = [];
+  for (let y = 0; y < H; y += tile) for (let x = 0; x < W; x += tile) list.push([x, y, Math.min(tile, W - x), Math.min(tile, H - y)]);
+  return list;
+};
+let queue = tiles();
+let sample = 0;
+const t0 = performance.now();
+let lastShow = 0;
+
+function drawTile([x, y, w, h]) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, B.fb);
+  gl.viewport(0, 0, W, H);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(x, y, w, h);
+  gl.useProgram(trace);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, A.tex);
+  gl.uniform1i(U(trace, "uAccum"), 0);
+  gl.uniform2f(U(trace, "uRes"), W, H);
+  gl.uniform1f(U(trace, "uSample"), sample);
+  gl.uniform3fv(U(trace, "uCamPos"), cam.pos);
+  gl.uniform3fv(U(trace, "uCamTarget"), cam.target);
+  gl.uniform1f(U(trace, "uFov"), cam.fov);
+  gl.uniform1f(U(trace, "uFocus"), cam.focus);
+  gl.uniform1f(U(trace, "uAperture"), cam.aperture);
+  gl.uniform1i(U(trace, "uZero"), 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, B.fb);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, A.fb);
+  gl.blitFramebuffer(x, y, x + w, y + h, x, y, x + w, y + h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.disable(gl.SCISSOR_TEST);
+}
+function show() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(display);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, A.tex);
+  gl.uniform1i(U(display, "uAccum"), 0);
+  gl.uniform2f(U(display, "uRes"), W, H);
+  gl.uniform1f(U(display, "uExposure"), cam.exposure);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+const sec = () => ((performance.now() - t0) / 1000).toFixed(0);
+const loop = new MessageChannel();
+loop.port1.onmessage = step;
+function step() {
+  const start = performance.now();
+  let slowest = 0;
+  while (performance.now() - start < 60 && queue.length) {
+    const t = performance.now();
+    drawTile(queue.shift());
+    gl.finish();
+    slowest = Math.max(slowest, performance.now() - t);
+  }
+  if (!queue.length) {
+    sample++;
+    // 1枚のタイルに時間がかかりすぎるなら小さく、速すぎるなら大きく（GPU が止まったと思われないように）
+    if (slowest > 300 && tile > 32) tile /= 2;
+    else if (slowest < 25 && tile < 256) tile *= 2;
+    queue = tiles();
+  }
+  if (performance.now() - lastShow > 1000 || sample >= SPP) {
+    show();
+    lastShow = performance.now();
+    status.textContent = `${W}x${H}  ${sample}/${SPP} 回  ${sec()} 秒`;
+  }
+  if (sample >= SPP) return finish();
+  loop.port2.postMessage(0);
+}
+function finish() {
+  show();
+  status.textContent = `できあがり：${W}x${H}  ${SPP} 回  ${sec()} 秒` + (SAVE ? "（保存中…）" : "");
+  window.renderDone = true;
+  if (!SAVE) return;
+  canvas.toBlob(async (blob) => {
+    const r = await fetch(`/save?name=${encodeURIComponent(NAME)}`, { method: "POST", body: blob });
+    status.textContent = `できあがり：${W}x${H}  ${SPP} 回  ${sec()} 秒  ` + (r.ok ? `out/${NAME}.png に保存しました` : "保存できませんでした");
+    window.saved = r.ok;
+  }, "image/png");
+}
+loop.port2.postMessage(0);
+</script>
+</body>
+</html>
